@@ -260,10 +260,15 @@
   background: var(--paper);
 }
 .diagnostic-assistant .neuro-qa {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 1rem;
   margin: 0;
   padding: 1rem;
   border: 0;
 }
+.diagnostic-assistant .neuro-qa > * { margin-block: 0; }
 .diagnostic-assistant .mechanic-voice { padding: .75rem; }
 @media (max-width: 1190px) {
   .header-assistant-actions button { padding-inline: .5rem; }

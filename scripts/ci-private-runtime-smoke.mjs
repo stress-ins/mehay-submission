@@ -48,7 +48,7 @@ try {
   }
   if (!healthy) throw new Error("synthetic runtime smoke did not become healthy");
   const rendered = spawnSync("docker", ["exec", container, "node", "-e",
-    "fetch('http://127.0.0.1:3087/mehay/api/manuals/manual-1/pages/1.png').then(async r=>{const b=Buffer.from(await r.arrayBuffer());process.exit(r.status===200&&b.subarray(0,8).toString('hex')==='89504e470d0a1a0a'?0:1)}).catch(()=>process.exit(1))"],
+    "(async()=>{const base='http://127.0.0.1:3087/mehay/api';const setup=await fetch(base+'/auth/setup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'smoke-admin',displayName:'Synthetic Smoke',password:'Synthetic smoke password 1!'})});if(setup.status!==201)process.exit(1);const cookie=setup.headers.get('set-cookie')?.split(';',1)[0];if(!cookie)process.exit(1);const r=await fetch(base+'/manuals/manual-1/pages/1.png',{headers:{cookie}});const b=Buffer.from(await r.arrayBuffer());process.exit(r.status===200&&r.headers.get('content-type')?.startsWith('image/png')&&b.subarray(0,8).toString('hex')==='89504e470d0a1a0a'?0:1)})().catch(()=>process.exit(1))"],
   { stdio: "ignore" });
   if (rendered.status !== 0) throw new Error("synthetic cited PDF page did not render");
 } finally {

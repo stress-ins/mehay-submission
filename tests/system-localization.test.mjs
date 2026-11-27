@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { transformSync, traverse } from "@babel/core";
 import systemLocaleBabelPlugin from "../src/systemLocaleBabelPlugin.ts";
-import { translateInterfaceText } from "../src/systemTranslations.ts";
+import { translateInterfaceText, translateNeuroReason } from "../src/systemTranslations.ts";
 
 function compile(source) {
   return transformSync(source, {
@@ -21,6 +21,25 @@ test("only literal JSX text is marked for translation; runtime business children
   assert.match(output, /userName/u);
   assert.doesNotMatch(output, /__translateSystemText\(userName\)/u);
   assert.match(output, /translateSystemText/u);
+});
+
+test("neuro queue reasons localize every summary variant and preserve dynamic facts", () => {
+  const languages = ["en", "hi", "tg", "uz"];
+  const reasons = [
+    "Последнее надёжное акустическое измерение не выявило отклонений.",
+    "Надёжное измерение выявило F01 с оценкой 0.93; требуется решение механика о допуске.",
+    "Последнее измерение не прошло проверку качества; требуется повторная запись.",
+    "Код неисправности не соответствует двигателю. Проверьте машину и повторите замер.",
+    "Последнее измерение не подтверждено по качеству, уверенности или оценке риска.",
+    "Последнее измерение выявило F13; требуется осмотр механика.",
+  ];
+  for (const language of languages) {
+    for (const reason of reasons) assert.notEqual(translateNeuroReason(reason, language), reason, `${language}: ${reason}`);
+    const localized = translateNeuroReason(reasons[1], language);
+    assert.match(localized, /F01/u);
+    assert.match(localized, /0\.93/u);
+    assert.equal(translateNeuroReason("Future diagnostic reason", language), "Future diagnostic reason");
+  }
 });
 
 test("a user supplied name equal to a dictionary key remains an untranslated JSX expression", () => {

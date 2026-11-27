@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createGuidanceRepository } from "./neurodvs-guidance.mjs";
+import { zmzF01Workplan } from "./zmz-f01-workplan.mjs";
 
 const manuals = [{ id: "sample-guide", title: "Synthetic service guide", engineKeys: ["test-100"] }];
 const item = {
@@ -25,6 +26,28 @@ test("verified synthetic guidance is scoped to the exact engine and returns stor
 
 test("rejects synthetic guidance whose citation quote is not present on its indexed page", () => {
   assert.throws(() => createGuidanceRepository([{ ...item, quote: "Missing line." }], options), /Invalid verified guidance entry/);
+});
+
+test("builds the ZMZ F01 procedure only from the verified manual pages and cites the reassembly diagram", () => {
+  const manual = { id: "zmz-40904-40905", sha256: "99cf64334c578d668ce67bc4c9a1d7b0bb1e9c59ddac982b6061ea18533a7147", engineKeys: ["змз-40905.10"] };
+  const pages = new Map([
+    [142, "TEMP 80…90 °С; CHECK 30 мин; RUN 3…4 мин; FIX 2500 об/мин"],
+    [143, "RANGE 2000…3000 об/мин; LISTEN 15…30 с; REPEAT 5 раз; EXTRA 15 мин; SOURCE источник стука"],
+    [136, "WIRES провода и шланги"],
+    [114, "VENT вентиляции картера"],
+    [186, "TORQUE 6,9...8,8 Н·м рис.147"],
+    [187, "Рис.147 крышки клапанов"],
+  ]);
+  const steps = zmzF01Workplan(manual, (_id, page) => pages.get(page));
+  assert.deepEqual(steps.map(({ pdfPage }) => pdfPage), [142, 142, 143, 143, 143, 143, 136, 114, 186]);
+  assert.deepEqual(steps.map(({ stepKey }) => stepKey), ["zmz_f01_warmup", "zmz_f01_operating_cycle", "zmz_f01_variable_cycle", "zmz_f01_listen_idle", "zmz_f01_retry_cycle", "zmz_f01_localize_source", "zmz_f01_disconnect", "zmz_f01_ventilation", "zmz_f01_reassemble"]);
+  assert.ok(steps.every(({ quote }) => quote.split(/\s+/u).length <= 3));
+  assert.equal(steps[0].translations.en.startsWith("Warm the engine"), true);
+  assert.match(steps.at(-1).illustrationUrl, /pages\/187\.png$/u);
+  assert.match(steps.at(-1).illustrationCaption, /Рис\.147/u);
+  assert.deepEqual(zmzF01Workplan({ ...manual, sha256: "stale" }, (_id, page) => pages.get(page)), []);
+  pages.delete(187);
+  assert.deepEqual(zmzF01Workplan(manual, (_id, page) => pages.get(page)), []);
 });
 
 test("workshop steps require independent page evidence and preserve the parent operation", () => {

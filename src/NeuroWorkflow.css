@@ -11,7 +11,12 @@
 }
 .neuro-step-plan h3, .neuro-chat-history h3 { margin: 0 0 .75rem; }
 .neuro-plan-view { display: block; }
-.neuro-plan-return { min-height: 44px; margin-bottom: .75rem; }
+.neuro-plan-return { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; margin-bottom: .75rem; padding: .55rem .9rem; border: 1px solid var(--line); border-radius: .5rem; color: var(--ink); background: var(--paper); font: inherit; font-weight: 650; cursor: pointer; }
+.neuro-plan-return svg, .neuro-step-plan button svg, .neuro-quick-nav button svg { color: currentColor; flex: none; }
+.neuro-plan-return:hover, .neuro-step-plan button:hover, .neuro-quick-nav button:hover { border-color: var(--ink); }
+.neuro-plan-return:focus-visible, .neuro-step-plan button:focus-visible, .neuro-quick-nav button:focus-visible { outline: 3px solid #1769aa; outline-offset: 2px; }
+.neuro-dvs form button:focus-visible, .neuro-result .neuro-section button:focus-visible { outline: 3px solid #1769aa; outline-offset: 2px; }
+.shell[data-theme="dark"] .neuro-plan-return:focus-visible, .shell[data-theme="dark"] .neuro-step-plan button:focus-visible, .shell[data-theme="dark"] .neuro-quick-nav button:focus-visible, .shell[data-theme="dark"] .neuro-dvs form button:focus-visible, .shell[data-theme="dark"] .neuro-result .neuro-section button:focus-visible { outline-color: #9bd5ff; }
 .neuro-workflow--plan-only { margin: 0; }
 .neuro-workflow--plan-only .neuro-step-plan { padding: 0; border: 0; background: transparent; }
 .neuro-workflow--plan-only .neuro-step-plan h3 { margin-bottom: 1rem; }
@@ -19,7 +24,6 @@
 .neuro-plan-modes, .neuro-step-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .neuro-step-plan button { min-height: 3.5rem; padding: .65rem 1rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: .5rem; font: inherit; cursor: pointer; }
 .neuro-plan-modes [aria-pressed="true"], .neuro-step-actions button:first-child { background: var(--green-soft); font-weight: 600; }
-.neuro-step-plan button:focus-visible { outline: 2px solid #568976; outline-offset: 2px; }
 .neuro-step-plan button:disabled { cursor: default; opacity: .55; }
 .neuro-evidence { display: grid; justify-items: start; gap: .4rem; margin: .5rem 0; }
 .neuro-evidence img { display: block; width: min(100%, 900px); height: auto; margin-top: .5rem; border: 1px solid #cbd5e1; background: #fff; }
@@ -33,9 +37,24 @@
 
 .workshop-step-body { margin: 1rem 0 .65rem; }
 .workshop-step-body h4 { margin: 0 0 .3rem; font-family: inherit; font-size: 1.2rem; }
-.workshop-step-body p { margin: 0; max-width: 68ch; line-height: 1.55; }
+.workshop-step-body small { display: block; margin: .25rem 0 .5rem; color: var(--muted); font-size: .9rem; }
+.workshop-step-body p { width: 100%; max-width: none; margin: 0; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .workshop-step-body p strong { white-space: nowrap; }
+.workshop-manual-source { margin-top: 1rem; padding: .85rem 1rem; border-inline-start: 3px solid var(--line); color: var(--ink); background: var(--green-soft, #f4f6f8); }
+.workshop-manual-source blockquote { margin: .45rem 0 0; font: inherit; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.neuro-result .neuro-excerpt, .neuro-result .neuro-answer { max-width: none; color: var(--ink); font-size: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.timing-marks-card { flex: 1 1 100%; min-width: 0; margin: 18px 0; padding: 16px; border: 1px solid var(--line); border-inline-start: 4px solid var(--verdict-warning, #805300); border-radius: 12px; background: var(--paper); color: var(--ink); }
+.timing-marks-card h3 { margin: 0 0 8px; color: var(--ink); }
+.timing-marks-card p { max-width: none; color: var(--ink); line-height: 1.55; }
+.timing-marks-result { padding: 10px 12px; border-radius: 8px; background: var(--surface-muted, #f2f4f3); }
+.timing-marks-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.timing-marks-actions button:focus-visible { outline: 3px solid #1769aa; outline-offset: 3px; }
+.shell[data-theme="dark"] .timing-marks-card { background: var(--paper); color: var(--ink); border-color: var(--line); }
+.shell[data-theme="dark"] .timing-marks-card h3, .shell[data-theme="dark"] .timing-marks-card p { color: var(--ink); }
+.shell[data-theme="dark"] .timing-marks-result { background: #202725; }
+.shell[data-theme="dark"] .timing-marks-actions button:focus-visible { outline-color: #9bd5ff; }
 .neuro-step-actions button, .workshop-voice-actions button { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; }
+.workshop-voice-actions button svg { color: currentColor; flex: none; }
 .workshop-voice-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 .workshop-voice-note { padding: .6rem .8rem; border-inline-start: 3px solid var(--ink); }
 .workshop-values { margin-block: .75rem; }

@@ -33,15 +33,25 @@ export default function AssistantAnswer({ answer, evidence, sources, webSearch, 
     const label = heading;
     const Icon = /провер|действ|шаг/i.test(label) ? Wrench : /важно|вниман|не дел/i.test(label) ? CircleHelp : /данн|значен|напряж/i.test(label) ? Battery : /итог|вывод|результ/i.test(label) ? ClipboardCheck : BookOpenText;
     const content = heading ? lines.slice(1).join("\n") : block;
-    const highlight = (line: string) => line.split(/(\[R\d+\]|(?<![\p{L}\d])\d+(?:[.,]\d+)?\s*(?:вольт|ампер|об\/мин|Н·м|°[CС]|кПа|бар|км|мм|В|V|А)(?![\p{L}\d]))/giu).map((part, index) => {
+    const highlight = (line: string) => line.split(/(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|https?:\/\/[^\s<>]+|\[R\d+\]|(?<![\p{L}\d])\d+(?:[.,]\d+)?\s*(?:вольт|ампер|об\/мин|Н·м|°[CС]|кПа|бар|км|мм|В|V|А)(?![\p{L}\d]))/giu).map((part, index) => {
+        const markdownLink = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/i);
+        if (markdownLink) {
+          try { const url = new URL(markdownLink[2]); if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) return <a key={index} href={url.href} target="_blank" rel="noopener noreferrer">{markdownLink[1]}</a>; } catch { /* render unsafe or malformed link as text */ }
+        }
+        if (/^https?:\/\//i.test(part)) {
+          const cleanUrl = part.replace(/[.,!?;:)]+$/g, "");
+          try { const url = new URL(cleanUrl); if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) return <span key={index}><a href={url.href} target="_blank" rel="noopener noreferrer">{cleanUrl}</a>{part.slice(cleanUrl.length)}</span>; } catch { /* render malformed URL as text */ }
+        }
+        if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
         const record = citedRecordForMarker(part, evidence);
         return record ? <span key={index}>{recordLink(record, part)}</span> : index % 2 === 1 && !/^\[R\d+\]$/.test(part) ? <strong className="answer-value" key={index}>{part}</strong> : <span key={index}>{part}</span>;
     });
     const contentLines = content.trim().split("\n");
     const bullets = contentLines.every((line) => /^[-•]\s+/.test(line));
+    const numbered = contentLines.every((line) => /^\d+[.)]\s+/.test(line));
     return <section className="answer-section" key={blockIndex}>
       {heading && <h3><Icon size={17} aria-hidden="true" />{heading.replace(/\*\*/g, "")}</h3>}
-      {bullets ? <ul>{contentLines.map((line, index) => <li key={index}>{highlight(line.slice(2))}</li>)}</ul> : content && <p>{highlight(content)}</p>}
+      {bullets ? <ul>{contentLines.map((line, index) => <li key={index}>{highlight(line.replace(/^[-•]\s+/, ""))}</li>)}</ul> : numbered ? <ol>{contentLines.map((line, index) => <li key={index}>{highlight(line.replace(/^\d+[.)]\s+/, ""))}</li>)}</ol> : content && <p>{contentLines.map((line, index) => <span key={index}>{index > 0 && <br />}{highlight(line)}</span>)}</p>}
       {/(?:\d\s*(?:В|V)(?!\p{L})|вольт|напряжени)/iu.test(content) && <Battery className="answer-voltage-icon" size={17} aria-label="Указано напряжение" />}
     </section>;
   });

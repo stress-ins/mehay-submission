@@ -26,7 +26,7 @@ function validDiagnosis(value, vehicleId, sessionId) {
 const warningHash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 function compatibilityConflict(vehicle, value) {
-  const expectedFuel = value.anomaly_type === "F08" ? "дизель" : value.anomaly_type === "F13" ? "бензин" : null;
+  const expectedFuel = value.anomaly_type === "F08" ? "дизель" : ["F12", "F13"].includes(value.anomaly_type) ? "бензин" : null;
   const actualFuel = String(vehicle?.fuel || "").toLocaleLowerCase("ru");
   return Boolean(expectedFuel && ["дизель", "бензин"].includes(actualFuel) && actualFuel !== expectedFuel);
 }
@@ -81,6 +81,7 @@ export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRe
   db.exec(`CREATE TABLE IF NOT EXISTS neuro_diagnoses(vehicle_id TEXT NOT NULL, session_id TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL, revision TEXT NOT NULL DEFAULT '', PRIMARY KEY(vehicle_id,session_id));
     CREATE TABLE IF NOT EXISTS neuro_conversation(owner TEXT NOT NULL, vehicle TEXT NOT NULL, session TEXT NOT NULL, id TEXT NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, evidence TEXT NOT NULL, team_visible INTEGER NOT NULL DEFAULT 0, manual_verified INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(owner,vehicle,session,id));
     CREATE TABLE IF NOT EXISTS neuro_vehicle_assignments(vehicle TEXT NOT NULL, user_id TEXT NOT NULL, assigned_at TEXT NOT NULL, PRIMARY KEY(vehicle,user_id));
+    CREATE TABLE IF NOT EXISTS neuro_timing_findings(vehicle_id TEXT NOT NULL, session_id TEXT NOT NULL, result_hash TEXT NOT NULL, outcome TEXT NOT NULL CHECK(outcome IN ('matched','mismatched')), recorded_by TEXT NOT NULL, recorded_at TEXT NOT NULL, PRIMARY KEY(vehicle_id,session_id,result_hash));
     CREATE TABLE IF NOT EXISTS neuro_tickets(vehicle_id TEXT NOT NULL, session_id TEXT NOT NULL, state TEXT NOT NULL, result TEXT, updated_at TEXT NOT NULL, PRIMARY KEY(vehicle_id,session_id));
     CREATE TABLE IF NOT EXISTS neuro_diagnosis_acknowledgements(vehicle_id TEXT NOT NULL, session_id TEXT NOT NULL, result_hash TEXT NOT NULL, acknowledged_at TEXT NOT NULL, PRIMARY KEY(vehicle_id,session_id));
     CREATE TABLE IF NOT EXISTS neuro_ticket_previews(token TEXT PRIMARY KEY, vehicle_id TEXT NOT NULL, session_id TEXT NOT NULL, snapshot TEXT NOT NULL, expires_at TEXT NOT NULL);`);
@@ -102,10 +103,18 @@ export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRe
     const result = publicDiagnosis(diagnosis, vehicle, acknowledged(vehicle.vehicle_id, diagnosis.session_id, diagnosis));
     if (result.guidance.canCreateTicket) {
       result.guidance.recommendations = getRecommendations(vehicle, diagnosis).map(item => isRepairOperation(item) ? { ...item, operationKind: "repair" } : item);
+      const timingAdjustment = result.guidance.recommendations.find(item => item.stepKey === "injection_timing_adjustment");
+      if (timingAdjustment && diagnosis.anomaly_type === "F08") {
+        const finding = db.prepare("SELECT outcome FROM neuro_timing_findings WHERE vehicle_id=? AND session_id=? AND result_hash=?").get(vehicle.vehicle_id, diagnosis.session_id, warningHash(diagnosis));
+        result.guidance.timingMarks = { outcome: finding?.outcome ?? null };
+        result.guidance.recommendations = result.guidance.recommendations.filter(isInspectionOperation);
+        if (finding?.outcome === "mismatched") result.guidance.recommendations.push({ ...timingAdjustment, operationKind: "repair" });
+      }
       if (!result.guidance.recommendations.length) {
         result.guidance.message = "Отклонение акустически подтверждено, но руководство не содержит проверенной операции с цитируемой страницей для этого двигателя и кода. Передайте двигатель на дефектовку механику; заявка ТОиР без источника не создана.";
         result.guidance.canCreateTicket = false;
         result.guidance.ticketBlockReason = "manual_evidence_required";
+        result.guidance.nextAction = "refer_for_inspection";
       } else if (!result.guidance.recommendations.some(isRepairOperation)) {
         result.guidance.message += " Проверки выполняйте на месте; рекомендация доступна для отдельной заявки на дефектовку, без ремонта и запчастей.";
         result.guidance.canCreateTicket = false;
@@ -197,11 +206,13 @@ export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRe
     if (!validId(vehicleId)) return res.status(400).json({ error: "invalid_request" });
     const vehicle = vehicles.get(vehicleId);
     if (!vehicle) return res.status(404).json({ error: "vehicle_not_found" });
+    const timingFindings = new Map(db.prepare("SELECT result_hash, session_id, outcome FROM neuro_timing_findings WHERE vehicle_id=?").all(vehicleId)
+      .map(row => [row.session_id + ":" + row.result_hash, row.outcome]));
     const diagnoses = db.prepare("SELECT session_id, result, created_at FROM neuro_diagnoses WHERE vehicle_id=? ORDER BY created_at DESC LIMIT 100").all(vehicleId).map((row) => {
       const result = JSON.parse(row.result);
       return { session_id: row.session_id, created_at: row.created_at, status: result.status,
         anomaly_type: result.anomaly_type, anomaly_title: result.anomaly_title, anomaly_score: result.anomaly_score,
-        confidence: result.confidence, signal_quality: result.signal_quality };
+        confidence: result.confidence, signal_quality: result.signal_quality, timingMarks: timingFindings.get(row.session_id + ":" + warningHash(result)) };
     });
     const tickets = db.prepare("SELECT session_id, result, updated_at FROM neuro_tickets WHERE vehicle_id=? AND state='created' ORDER BY updated_at DESC LIMIT 100").all(vehicleId).map((row) => {
       const result = JSON.parse(row.result);
@@ -229,6 +240,41 @@ export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRe
       res.set("Cache-Control", "no-store").json({ ...result, resultHash: warningHash(json), vehicle: { vehicle_id: vehicle.vehicle_id, engine_model: vehicle.engine_model } });
     } catch {
       res.status(502).json({ error: "diagnostic_service_unavailable" });
+    }
+  });
+
+  app.post("/api/neuro/diagnosis/timing-marks", (req, res) => {
+    const { vehicleId, sessionId, resultHash, outcome } = req.body || {};
+    if (!validId(vehicleId) || !validId(sessionId) || typeof resultHash !== "string" || !/^[a-f0-9]{64}$/.test(resultHash) ||
+        !["matched", "mismatched"].includes(outcome) || Object.keys(req.body).some(key => !["vehicleId", "sessionId", "resultHash", "outcome"].includes(key))) {
+      return res.status(400).json({ error: "invalid_request" });
+    }
+    const vehicle = vehicles.get(vehicleId);
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const saved = db.prepare("SELECT result FROM neuro_diagnoses WHERE vehicle_id=? AND session_id=?").get(vehicleId, sessionId);
+      const diagnosis = saved && JSON.parse(saved.result);
+      const marks = vehicle && diagnosis && warningHash(diagnosis) === resultHash && assess(vehicle, diagnosis).guidance.timingMarks;
+      if (!marks) {
+        db.exec("ROLLBACK");
+        return res.status(409).json({ error: "timing_marks_not_applicable" });
+      }
+      if (marks.outcome !== outcome) {
+        const ticket = db.prepare("SELECT state FROM neuro_tickets WHERE vehicle_id=? AND session_id=?").get(vehicleId, sessionId);
+        if (ticket && ticket.state !== "failed") {
+          db.exec("ROLLBACK");
+          return res.status(409).json({ error: "ticket_already_submitted" });
+        }
+        db.prepare("INSERT INTO neuro_timing_findings VALUES(?,?,?,?,?,?) ON CONFLICT(vehicle_id,session_id,result_hash) DO UPDATE SET outcome=excluded.outcome,recorded_by=excluded.recorded_by,recorded_at=excluded.recorded_at")
+          .run(vehicleId, sessionId, resultHash, outcome, req.user.id, new Date().toISOString());
+        db.prepare("UPDATE neuro_diagnoses SET revision=? WHERE vehicle_id=? AND session_id=?").run(randomUUID(), vehicleId, sessionId);
+      }
+      const result = assess(vehicle, diagnosis);
+      db.exec("COMMIT");
+      return res.set("Cache-Control", "no-store").json({ ...result, resultHash });
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
     }
   });
 

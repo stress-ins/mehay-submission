@@ -1,0 +1,15 @@
+.fleet-review { padding: clamp(16px, 2vw, 28px); grid-column: 1 / -1; }
+.fleet-review h2 span, .stored-result small { color: var(--muted); }
+.fleet-review-list { padding: 0; list-style: none; margin: 12px 0; }
+.fleet-review-list li, .stored-result { padding: 14px 0; border-top: 1px solid var(--line); }
+.fleet-review-identity, .fleet-review-actions, .stored-result strong, .stored-result p { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fleet-review-actions { margin-top: 8px; }
+.fleet-review-actions button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--paper); font: inherit; }
+.fleet-review-actions button:hover, .fleet-review-actions button:focus-visible { border-color: currentColor; }
+.stored-result { display: grid; gap: 8px; justify-items: start; }
+.stored-result p { margin: 0; }
+.stored-result div span { display: inline-block; margin-inline-end: 16px; }
+.fleet-register.table-wrap :is(th, small, .empty), .stored-result small { font-size: .9rem; }
+.system-language { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+.system-language select { min-height: 44px; font: inherit; background: var(--paper); color: inherit; border: 1px solid var(--line); padding: 0 6px; border-radius: 6px; }
+@media (max-width: 600px) { .system-language { gap: 0; } .system-language svg { display: none; } }

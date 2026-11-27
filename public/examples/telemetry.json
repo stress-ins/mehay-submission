@@ -1,0 +1,13 @@
+{
+  "recordedAt": "2026-11-15T10:00:00Z",
+  "source": "OBD адаптер",
+  "odometerKm": 125000,
+  "rpm": 820,
+  "speed": 0,
+  "coolantTemp": 88,
+  "batteryVoltage": 14.1,
+  "raw": {
+    "protocol": "demo",
+    "dtcs": []
+  }
+}

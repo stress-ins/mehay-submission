@@ -1,0 +1,122 @@
+.repair-experience {
+  --repair-ink: var(--ink);
+  --repair-muted: var(--muted);
+  --repair-line: var(--line);
+  margin: 18px 0;
+  padding: 20px;
+  border: 1px solid var(--repair-line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--repair-ink);
+}
+.repair-experience__heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.repair-experience__heading h2 { margin: 5px 0; font-size: 19px; }
+.repair-experience__heading p,
+.repair-experience__state,
+.repair-experience__note { margin: 5px 0 0; color: var(--repair-muted); line-height: 1.5; }
+.repair-experience__eyebrow { color: var(--repair-muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.repair-experience__engine { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 17px 0 12px; padding: 11px 13px; border-radius: 6px; background: var(--green-soft); }
+.repair-experience__engine > span:first-child { color: var(--repair-muted); font-size: 12px; }
+.repair-experience__fault { margin-left: auto; color: var(--repair-muted); font-size: 12px; }
+.repair-experience__summary { margin: 12px 0; line-height: 1.6; }
+.repair-experience__legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 12px 0; color: var(--repair-muted); font-size: 11px; }
+.repair-experience__legend span { display: inline-flex; align-items: center; gap: 6px; }
+.repair-experience__key { width: 9px; height: 9px; border-radius: 50%; background: #276d59; }
+.repair-experience__key--engine { background: #6684c3; }
+.repair-experience__key--similar { background: #c28b38; }
+.repair-experience__search { display: flex; align-items: center; gap: 9px; margin: 13px 0; padding: 0 12px; min-height: 56px; border: 1px solid var(--repair-line); border-radius: 6px; color: var(--repair-muted); }
+.repair-experience__search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--repair-ink); font: inherit; }
+.repair-experience__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.repair-experience__list { display: grid; gap: 9px; }
+.repair-case { border: 1px solid var(--repair-line); border-left: 4px solid #276d59; border-radius: 6px; }
+.repair-case--engine { border-left-color: #6684c3; }
+.repair-case--similar { border-left-color: #c28b38; }
+.repair-case__toggle { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(190px, 1fr) minmax(90px, .5fr) auto; gap: 14px; align-items: center; width: 100%; min-height: 72px; padding: 12px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.repair-case__identity,.repair-case__hours,.repair-case__waiting { display: grid; gap: 4px; min-width: 0; }
+.repair-case__identity span,.repair-case__identity small,.repair-case__hours > span,.repair-case__bar-row small { color: var(--repair-muted); font-size: 11px; }
+.repair-case__identity span { overflow-wrap: anywhere; }
+.repair-case__hours { gap: 5px; }
+.repair-case__bar-row { display: flex; align-items: center; gap: 8px; }
+.repair-case__bar-row small { width: 62px; flex: 0 0 auto; }
+.repair-case__bar { display: block; width: 100%; height: 6px; overflow: hidden; border-radius: 9px; background: #edf1ee; }
+.repair-case__bar-fill { display: block; height: 100%; border-radius: inherit; }
+.repair-case__bar-fill--plan { background: #9aa9a0; }
+.repair-case__bar-fill--actual { background: #276d59; }
+.repair-case__waiting { grid-template-columns: auto 1fr; align-items: center; color: var(--repair-muted); font-size: 11px; }
+.repair-case__waiting span { display: grid; gap: 4px; }
+.repair-case__waiting b { color: var(--repair-ink); font-size: 13px; }
+.repair-case__details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; padding: 12px 14px 14px; border-top: 1px solid var(--repair-line); }
+.repair-case__details p { display: grid; gap: 4px; margin: 0; line-height: 1.5; }
+.repair-case__details p b { color: var(--repair-muted); font-size: 11px; }
+.repair-case__part-choice { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.repair-case__part-choice button { min-height: 56px; padding: 10px 14px; border: 1px solid #276d59; border-radius: 5px; background: #f5faf7; color: #276d59; font: inherit; font-weight: 650; cursor: pointer; }
+.repair-case__part-choice small,.repair-case__notice { color: var(--muted); line-height: 1.5; }
+.repair-case__notice { grid-column: 1 / -1; margin: 0; padding: 8px 10px; border-radius: 5px; background: var(--amber-soft); }
+.repair-experience__note { margin-top: 14px; font-size: 11px; }
+.repair-experience__state--error { color: #a43d32; }
+.repair-experience__state { padding: 12px 0; }
+
+/* Keep primary controls on the NeuroDVS screen comfortable for touch. */
+.neuro-dvs .neuro-controls select,
+.neuro-dvs .neuro-controls > .btn,
+.neuro-dvs .neuro-ticket > .btn,
+.neuro-qa form > .btn,
+.neuro-qa form > div .btn { min-height: 56px; }
+.neuro-dvs .neuro-controls select,
+.neuro-dvs .neuro-controls > .btn { box-sizing: border-box; height: 56px; }
+.neuro-dvs .neuro-controls select { padding: 12px; }
+
+@media (max-width: 760px) {
+  .repair-experience { padding: 15px; }
+  .repair-case__toggle { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+  .repair-case__hours,.repair-case__waiting { grid-column: 1 / -1; }
+  .repair-case__toggle > svg { grid-column: 2; grid-row: 1; }
+}
+@media (max-width: 480px) {
+  .repair-case__details { grid-template-columns: 1fr; }
+  .repair-case__part-choice,.repair-case__notice { grid-column: 1; }
+  .repair-experience__fault { margin-left: 0; }
+}
+
+/* Readable, scannable work-history comparisons. */
+.repair-experience { font-size: 16px; }
+.repair-experience__eyebrow,.repair-experience__engine > span:first-child,.repair-experience__fault,
+.repair-experience__legend,.repair-case__identity small,.repair-case__hours > span:first-child,
+.repair-case__bar-row b,.repair-case__details p b,.repair-experience__note { font-size: 14px; }
+.repair-experience__heading h2 { font-size: 1.5rem; }
+.repair-experience__heading p,.repair-experience__summary,.repair-experience__state { font-size: 1rem; }
+.repair-experience__filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.repair-experience__filters button { min-height: 48px; padding: 8px 14px; border: 1px solid var(--repair-line); border-radius: 999px; background: var(--paper); color: var(--repair-ink); font: inherit; cursor: pointer; }
+.repair-experience__filters button.is-active { border-color: #276d59; background: #e8f1ec; color: #174b3b; font-weight: 650; }
+.repair-experience__count { margin: 8px 0 12px; color: var(--repair-muted); font-size: 14px; }
+.repair-experience__more { width: 100%; min-height: 56px; margin-top: 10px; border: 1px solid var(--repair-line); border-radius: 6px; background: var(--paper); color: var(--repair-ink); font: inherit; font-weight: 650; cursor: pointer; }
+.shell[data-theme="dark"] .repair-experience__more { background: #252c2b; color: #e7eeea; border-color: #49544f; }
+.repair-case__toggle { min-height: 88px; }
+.repair-case__identity strong,.repair-case__hours strong,.repair-case__waiting b { font-size: 1rem; }
+.repair-case__bar-row { display: grid; grid-template-columns: 40px minmax(50px, 1fr) auto; gap: 9px; width: 100%; align-items: center; }
+.repair-case__bar-row b { color: var(--repair-muted); font-weight: 500; }
+.repair-case__bar { height: 10px; }
+.repair-case__variance { color: var(--repair-muted); font-size: 14px; }
+.repair-case__waiting { font-size: 14px; }
+.repair-case__details p b { color: var(--repair-muted); }
+.repair-case__part-choice small,.repair-case__notice { font-size: 14px; }
+.repair-experience__filters button:focus-visible,.repair-case__part-choice button:focus-visible,.repair-case__toggle:focus-visible { outline: 3px solid #4f9077; outline-offset: 2px; }
+.shell[data-theme="dark"] .repair-experience__filters button { background: #252c2b; color: #e7eeea; border-color: #49544f; }
+.shell[data-theme="dark"] .repair-experience__filters button.is-active { background: #28463c; color: #e8fff2; border-color: #65a887; }
+.shell[data-theme="dark"] .repair-case__bar { background: #3a4540; }
+.shell[data-theme="dark"] .repair-case__part-choice button { background: #263b32; color: #b4e2ca; }
+@media (max-width: 760px) {
+  .repair-case__toggle { min-height: 56px; }
+  .repair-case__hours,.repair-case__waiting { grid-column: 1 / -1; }
+}
+
+
+.repair-insight { display: grid; gap: .4rem; margin: 1rem 0; padding: 1rem; color: var(--ink); background: var(--green-soft); border-inline-start: 4px solid #568976; border-radius: .4rem; }
+.repair-insight p { margin: 0; }
+.repair-insight small { color: var(--muted); }
+.repair-insight a { color: inherit; text-underline-offset: .2em; }
+.repair-experience__search { background: var(--paper); }
+.shell[data-theme] .repair-experience__search input[type="search"] { color: var(--ink); background: transparent; }
+.repair-experience__search:focus-within { outline: 2px solid #568976; outline-offset: 2px; }
+.shell[data-theme="dark"] .repair-experience__state--error { color: #ffac9e; }
+.shell[data-theme="dark"] .repair-case__bar-fill--actual { background: #81b69f; }

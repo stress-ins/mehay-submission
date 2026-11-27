@@ -1,0 +1,134 @@
+services:
+  mehay:
+    image: ${MEHAY_IMAGE:?Set MEHAY_IMAGE to an immutable image digest}
+    container_name: mehay
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    ports:
+      - 127.0.0.1:3087:3087
+    volumes:
+      - type: bind
+        source: /opt/mehay/data
+        target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MEHAY_KB_DIR:-/opt/mehay/knowledge}
+        target: /knowledge
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MEHAY_PRIVATE_SOURCE_DIR:?Set the private source directory}/releases/${MEHAY_PRIVATE_RELEASE:?Set the private source release}
+        target: /private-source
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3087
+      APP_BASE_PATH: /mehay
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost}
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      MEHAY_KB_DIR: /knowledge
+      NEURODVS_DATA_PATH: /private-source/neurodvs_hackathon_mock_2026-11-16/data/vehicles.json
+      MOCK_ML_URL: http://mock-ml:8001
+      MOCK_TOIR_URL: http://mock-toir:8002
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-5.4-mini}
+      MECHANIC_DB: ${MECHANIC_DB:-}
+      MEHAY_ACOUSTIC_DEMO: ${MEHAY_ACOUSTIC_DEMO:-}
+      MEHAY_ACOUSTIC_INDEX: ${MEHAY_ACOUSTIC_INDEX:-}
+    networks: [mehay, mocks]
+    depends_on:
+      mock-ml:
+        condition: service_healthy
+      mock-toir:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3087/mehay/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+  mock-ml:
+    image: ${MEHAY_MOCK_ML_IMAGE:-${MEHAY_MOCK_IMAGE:?Set MEHAY_MOCK_IMAGE to an immutable image digest}}
+    container_name: mehay-mock-ml
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    command: [python, -m, uvicorn, mock_ml.app:app, --host, 0.0.0.0, --port, "8001"]
+    working_dir: /private-source/neurodvs_hackathon_mock_2026-11-16
+    volumes:
+      - type: bind
+        source: ${MEHAY_PRIVATE_SOURCE_DIR:?Set the private source directory}/releases/${MEHAY_PRIVATE_RELEASE:?Set the private source release}
+        target: /private-source
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      PYTHONPATH: /private-source/neurodvs_hackathon_mock_2026-11-16
+      MOCK_DATA_PATH: /private-source/neurodvs_hackathon_mock_2026-11-16/data/vehicles.json
+    expose: [8001]
+    networks: [mocks]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=1000,gid=1000
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
+      interval: 20s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+  mock-toir:
+    image: ${MEHAY_MOCK_TOIR_IMAGE:-${MEHAY_MOCK_IMAGE:?Set MEHAY_MOCK_IMAGE to an immutable image digest}}
+    container_name: mehay-mock-toir
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    command: [python, -m, uvicorn, mock_toir.app:app, --host, 0.0.0.0, --port, "8002"]
+    working_dir: /private-source/neurodvs_hackathon_mock_2026-11-16
+    volumes:
+      - type: bind
+        source: ${MEHAY_PRIVATE_SOURCE_DIR:?Set the private source directory}/releases/${MEHAY_PRIVATE_RELEASE:?Set the private source release}
+        target: /private-source
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      PYTHONPATH: /private-source/neurodvs_hackathon_mock_2026-11-16
+      MOCK_DATA_PATH: /private-source/neurodvs_hackathon_mock_2026-11-16/data/vehicles.json
+    expose: [8002]
+    networks: [mocks]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=1000,gid=1000
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=2)"]
+      interval: 20s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+networks:
+  mehay:
+    driver: bridge
+  mocks:
+    driver: bridge
+    internal: true

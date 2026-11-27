@@ -1,0 +1,16 @@
+.mehay-modal.procurement-draft { width: min(600px, 100%); }
+.procurement-draft .form-two { grid-template-columns: minmax(0, 1fr) 9rem; align-items: start; }
+.procurement-draft input:not([type=checkbox]), .procurement-draft select { min-height: 44px; min-width: 0; }
+.mehay-modal .form-select { min-height: 44px; padding-right: 2.25rem; color: var(--ink); background-color: var(--paper); border-color: var(--line); }
+.mehay-modal .modal-head .icon-btn { width: 44px; height: 44px; flex: 0 0 44px; }
+.procurement-draft .purchase-matches, .procurement-draft .purchase-options {
+  margin-block: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 8px;
+}
+.purchase-matches legend { font-size: 0.95rem; padding-inline: 4px; }
+.purchase-matches button { display: block; text-align: start; margin-block: 4px; width: 100%; }
+.purchase-options summary { cursor: pointer; font-weight: 600; }
+.purchase-options label { display: grid; gap: 8px; margin-top: 14px; }
+.procurement-draft .procurement-confirmation { padding-block: 8px; line-height: 1.45; overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .mehay-modal.procurement-draft .form-two { grid-template-columns: 1fr; gap: 12px; }
+}

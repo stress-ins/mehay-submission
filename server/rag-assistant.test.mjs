@@ -60,7 +60,7 @@ test("manual retrieval is keyless, engine-scoped, cited by PDF page, and protect
 });
 
 test("admin review queue records unresolved manual requests once without storing answers or source text", async (t) => {
-  const { raw, request } = await fixture(t, async () => []);
+  const { raw, request, app } = await fixture(t, async () => []);
   const body = { engineModel: "ЯМЗ-536", query: "Нужна процедура для конкретного узла", answer: true, vehicleId: "van-4", sessionId: "session-77" };
   for (let index = 0; index < 2; index += 1) {
     const response = await request("/api/manuals/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -80,9 +80,16 @@ test("admin review queue records unresolved manual requests once without storing
   assert.deepEqual(event.source_refs, []);
   assert.equal("answer" in event, false);
   assert.equal("provider_secret" in event, false);
+  const issue = queue.cases[0];
+  app.locals.db.prepare("UPDATE qa_observations SET created_at='2020-01-01T10:00:00.000Z'").run();
+  const extra = app.locals.db.prepare("INSERT INTO qa_observations SELECT ?,?,user_id,vehicle_id,vehicle_model,engine,session_id,surface,?,route_decision,action,tool,source_refs,outcome,error_code,duration_ms,NULL FROM qa_observations WHERE id=?");
+  for (let i = 0; i < 42; i++) extra.run('related-' + i, '2020-01-01T09:59:50.000Z', 'Другой вопрос', issue.last_observation_id);
   const reviewed = await request(`/api/admin/qa-review/${queue.cases[0].id}/review`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
   assert.equal(reviewed.status, 200);
   assert.equal((await reviewed.json()).status, "reviewed");
+  const after = (await (await request("/api/admin/qa-review")).json()).cases[0];
+  assert.equal(after.events.length, 40);
+  assert.equal(after.events.find(item => item.id === after.last_observation_id)?.request_text, body.query);
 });
 
 test("assistant uses local pages and keeps fleet context out of web lookup", async (t) => {
@@ -179,4 +186,19 @@ test("both manual search modes expose a conflict and exact citations without ask
     assert.deepEqual(body.results.map(x => x.url), pages.map(p => `/api/manuals/${p.manual.id}.pdf#page=${p.pdfPage}`));
     for (const page of pages) assert.ok(body.answer.includes(page.text));
   }
+});
+
+test("manual uncertainty with cited pages remains visible to administrators", async t => {
+  const { request } = await fixture(t, async () => [{
+    manual: { id: "yamz-236-repair", title: "Руководство" }, pdfPage: 286,
+    text: "Болты крепления крышек коренных подшипников: вертикальные 430–470 Нм; горизонтальные 100–120 Нм.", score: 2,
+  }]);
+  const response = await request("/api/manuals/search", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ engineModel: "ЯМЗ-236М2", query: "Какой момент затяжки болтов крышек коренных подшипников?", answer: true }) });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).manualAssessment, "insufficient_evidence");
+  const { cases } = await (await request("/api/admin/qa-review")).json();
+  assert.equal(cases.length, 1);
+  assert.equal(cases[0].category, "no_evidence");
+  assert.ok(cases[0].events[0].source_refs.length);
 });

@@ -7,7 +7,7 @@ type Observation = {
   route_decision: string | null; action: string; tool: string | null;
   source_refs: { manual: string; page: number }[]; outcome: string; error_code: string | null; duration_ms: number;
 };
-type ReviewCase = { id: string; status: "open" | "reviewed"; first_seen: string; updated_at: string; category: string; events: Observation[] };
+type ReviewCase = { id: string; status: "open" | "reviewed"; first_seen: string; updated_at: string; category: string; last_observation_id: string; events: Observation[] };
 
 const nextAction: Record<string, string> = {
   conflict: "Сопоставить указанные страницы и условия применимости. При необходимости уточнить процедуру у автора вопроса и обновить индекс источников.",
@@ -36,7 +36,7 @@ export default function AdminQaReview({ api }: { api: Api }) {
     <header><div><h2 id="qa-review-heading">Проверка ответов</h2><p>Внутренний список вопросов без подтверждённого ответа, конфликтов источников и ошибок обработки.</p></div></header>
     {error && <p className="auth-error" role="alert">{error}</p>}
     {loading ? <p className="muted" role="status">Загружаем обращения…</p> : cases.length === 0 ? <p className="muted">Открытых и проверенных обращений пока нет.</p> : <div className="admin-user-list">{cases.map((item) => {
-      const last = item.events.at(-1);
+      const last = item.events.find(event => event.id === item.last_observation_id);
       if (!last) return null;
       return <article className="admin-user" key={item.id}>
         <div className="admin-user-heading"><strong>{item.category === "conflict" ? "Конфликт источников" : item.category === "no_evidence" ? "Недостаточно данных" : "Ошибка обработки"}</strong><span>{item.status === "open" ? "Требует проверки" : "Проверено"}</span><span>{new Date(item.updated_at).toLocaleString()}</span></div>

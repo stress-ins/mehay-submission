@@ -1248,7 +1248,7 @@ export function createApp({
         .filter((source) => Number.isInteger(source.page) && source.page > 0).slice(0, 12);
       const requestText = String(body.query ?? body.message ?? "").trim().slice(0, 3000);
       const errorCode = req.qaRouteError || (res.statusCode >= 400 && typeof payload.error === "string" ? payload.error.slice(0, 80) : null);
-      const category = errorCode ? "error" : payload.manualAssessment === "conflict" ? "conflict" : payload.answerUnavailable || (surface === "manual_search" && sourceRefs.length === 0) || (surface === "assistant" && payload.evidence?.technicalCards?.some((card) => card.status === "needs_verification")) ? "no_evidence" : null;
+      const category = errorCode ? "error" : payload.manualAssessment === "conflict" ? "conflict" : payload.manualAssessment === "insufficient_evidence" || payload.answerUnavailable || (surface === "manual_search" && sourceRefs.length === 0) || (surface === "assistant" && payload.evidence?.technicalCards?.some((card) => card.status === "needs_verification")) ? "no_evidence" : null;
       const outcome = category || (surface === "tool_route" ? "routed" : "answered");
       const id = randomUUID(), createdAt = new Date().toISOString();
       const fingerprint = category ? createHash("sha256").update(JSON.stringify([user.id, body.vehicleId || "", body.sessionId || "", surface, requestText.toLocaleLowerCase("ru").replace(/\\s+/g, " "), category])).digest("hex") : null;
@@ -1352,12 +1352,14 @@ export function createApp({
     if (!recheckAdmin(req, res)) return;
     const cases = db.prepare("SELECT id,status,first_seen,updated_at,category,last_observation_id FROM qa_review_cases ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END,updated_at DESC LIMIT 100").all();
     const oneObservation = db.prepare("SELECT * FROM qa_observations WHERE id=?");
-    const relatedObservations = db.prepare("SELECT id,created_at,user_id,vehicle_id,vehicle_model,engine,session_id,surface,request_text,route_decision,action,tool,source_refs,outcome,error_code,duration_ms FROM qa_observations WHERE user_id=? AND vehicle_id IS ? AND session_id IS ? AND created_at>=? AND created_at<=? ORDER BY created_at,id LIMIT 40");
+    const relatedObservations = db.prepare("SELECT id,created_at,user_id,vehicle_id,vehicle_model,engine,session_id,surface,request_text,route_decision,action,tool,source_refs,outcome,error_code,duration_ms FROM qa_observations WHERE user_id=? AND vehicle_id IS ? AND session_id IS ? AND created_at>=? AND created_at<=? ORDER BY (id=?) DESC,abs(julianday(created_at)-julianday(?)),id LIMIT 40");
     return res.json({ cases: cases.map((item) => {
       const last = oneObservation.get(item.last_observation_id);
-      const lower = new Date(Date.parse(item.updated_at) - 15 * 60_000).toISOString();
-      const upper = new Date(Date.parse(item.updated_at) + 15 * 60_000).toISOString();
-      const events = last ? relatedObservations.all(last.user_id, last.vehicle_id, last.session_id, lower, upper) : [];
+      const time = Date.parse(last.created_at);
+      const lower = new Date(time - 15 * 60_000).toISOString();
+      const upper = new Date(time + 15 * 60_000).toISOString();
+      const events = relatedObservations.all(last.user_id, last.vehicle_id, last.session_id, lower, upper, last.id, last.created_at);
+      events.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
       return { ...item, events: events.map((event) => ({ ...event, source_refs: JSON.parse(event.source_refs) })) };
     }) });
   });

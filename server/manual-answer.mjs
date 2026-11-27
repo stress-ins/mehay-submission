@@ -17,17 +17,41 @@ export function yamzMainBearingTorqueAssessment(pages, language = "ru") {
       && /н\s*[·⋅.]\s*м|нм/iu.test(searchable);
   });
   if (!relevant.length) return null;
-  const orientation = relevant.some(({ text }) => /вертикальн/iu.test(text) && /горизонтальн/iu.test(text));
-  if (!orientation) return null;
-  const intro = {
-    ru: "В руководстве есть разные указания для крышек коренных подшипников: условия на страницах ниже различаются. На странице с таблицей крепёж разделён на вертикальные и горизонтальные болты. Не выбирайте значение, пока не установлены ориентация болта и операция (измерение или сборка); перед затяжкой сверьте применимую процедуру со старшим механиком.",
-    en: "The manual gives different instructions for the main bearing caps under the conditions shown below. Its table separates vertical and horizontal bolts. Identify bolt orientation and operation (measurement or assembly) before choosing a value; have the applicable procedure verified before tightening.",
-    hi: "मुख्य बेयरिंग कैप के लिए पुस्तिका में नीचे दी गई अलग-अलग परिस्थितियों के निर्देश हैं। तालिका ऊर्ध्वाधर और क्षैतिज बोल्ट अलग करती है। मान चुनने से पहले बोल्ट की दिशा और काम (माप या असेंबली) पहचानें; कसने से पहले लागू प्रक्रिया सत्यापित कराएँ।",
-    tg: "Дар дастур барои сарпӯшҳои подшипникҳои асосӣ шартҳои гуногун оварда шудаанд. Ҷадвал болтҳои амудӣ ва уфуқиро ҷудо мекунад. Пеш аз интихоби қимат самти болт ва амалиётро (ченкунӣ ё васлкунӣ) муайян карда, тартиби дахлдорро тасдиқ кунед.",
-    uz: "Asosiy podshipnik qopqoqlari uchun qo‘llanmada quyida turli shartlar berilgan. Jadval vertikal va gorizontal boltlarni ajratadi. Qiymatni tanlashdan oldin bolt yo‘nalishi va ish turini (o‘lchash yoki yig‘ish) aniqlang va tegishli tartibni tasdiqlating.",
-  }[language] || "В руководстве приведены разные условия. Определите ориентацию болта и операцию, затем подтвердите применимый порядок до затяжки.";
+  const entries = relevant.flatMap(page => {
+    const text = page.text.replace(/[-‐‑]\s*\n\s*/gu, "").replace(/\s+/gu, " ");
+    const operation = /при измерени|измерени[ея].{0,80}отверсти/iu.test(text) ? "measurement"
+      : /сборк|установк.{0,60}коленчат/iu.test(text) ? "assembly" : "unspecified";
+    const labels = [...text.matchAll(/(?:вертикальн|горизонтальн)\p{L}*/giu)];
+    return labels.flatMap((label, i) => {
+      const end = labels[i + 1]?.index ?? text.length;
+      const range = text.slice(label.index, end).match(/(\d+(?:[,.]\d+)?)\s*(?:[-–—…]|до)\s*(\d+(?:[,.]\d+)?)/iu);
+      return range ? [{ page, orientation: /^в/iu.test(label[0]) ? "vertical" : "horizontal", operation,
+        value: range[1].replace(",", ".") + "-" + range[2].replace(",", ".") }] : [];
+    });
+  });
+  const byCondition = new Map();
+  for (const entry of entries) {
+    const key = entry.orientation + ":" + entry.operation;
+    const sources = byCondition.get(key) || new Map();
+    sources.set(entry.page.pdfPage, entry.value);
+    byCondition.set(key, sources);
+  }
+  const conflict = [...byCondition.values()].some(sources => sources.size > 1 && new Set(sources.values()).size > 1);
+  const intro = (conflict ? {
+    ru: "Для одного и того же направления болтов в разных местах руководства приведены разные моменты. Источники ниже не дают основания выбрать значение: сверьте применимую процедуру и редакцию руководства со старшим механиком.",
+    en: "The manual gives different torque values for the same bolt orientation in separate passages. These sources do not establish which value applies; verify the procedure and manual revision with a senior mechanic.",
+    hi: "पुस्तिका के अलग-अलग अंशों में एक ही दिशा के बोल्टों के लिए अलग कसने के टॉर्क दिए हैं। ये स्रोत लागू मान तय नहीं करते; वरिष्ठ मैकेनिक से प्रक्रिया और पुस्तिका का संस्करण सत्यापित करें।",
+    tg: "Дар қисматҳои гуногуни дастур барои самти якхелаи болтҳо моменти гуногуни маҳкамкунӣ оварда шудааст. Ин сарчашмаҳо қимати татбиқшавандаро муайян намекунанд; тартиб ва таҳрири дастурро бо механики калон тасдиқ кунед.",
+    uz: "Qo‘llanmaning turli joylarida bir xil yo‘nalishdagi boltlar uchun turli tortish momentlari berilgan. Bu manbalar qaysi qiymat qo‘llanishini aniqlamaydi; tartib va qo‘llanma nashrini katta mexanik bilan tekshiring.",
+  } : {
+    ru: "Источники относятся к разным условиям: измерению, сборке или отдельным вертикальным и горизонтальным болтам. Это само по себе не подтверждает конфликт значений для одного и того же крепежа. Уточните операцию и направление болта; без этого нельзя выбрать применимый момент. Сверьте процедуру и редакцию руководства со старшим механиком.",
+    en: "The sources cover different conditions: measurement, assembly, or separate vertical and horizontal bolts. This alone does not establish conflicting values for the same fastener. Confirm the operation and bolt orientation before selecting a value, and verify the procedure and manual revision with a senior mechanic.",
+    hi: "स्रोत अलग परिस्थितियों से संबंधित हैं: माप, असेंबली, या अलग ऊर्ध्वाधर और क्षैतिज बोल्ट। इससे अकेले एक ही फास्टनर के लिए विरोधी मान सिद्ध नहीं होते। मान चुनने से पहले काम और बोल्ट की दिशा की पुष्टि करें तथा वरिष्ठ मैकेनिक से प्रक्रिया और पुस्तिका का संस्करण जाँचें।",
+    tg: "Сарчашмаҳо ба шартҳои гуногун тааллуқ доранд: ченкунӣ, васлкунӣ ё болтҳои амудӣ ва уфуқӣ. Ин худ аз худ ихтилофи қиматҳоро барои як маҳкамкунанда исбот намекунад. Пеш аз интихоб амалиёт ва самти болтро муайян карда, тартиб ва таҳрири дастурро бо механики калон тасдиқ кунед.",
+    uz: "Manbalar turli shartlarga tegishli: o‘lchash, yig‘ish yoki alohida vertikal va gorizontal boltlar. Bu holatning o‘zi bitta mahkamlagich uchun qiymatlar ziddiyatini isbotlamaydi. Qiymat tanlashdan oldin ish turi va bolt yo‘nalishini aniqlang, tartib va qo‘llanma nashrini katta mexanik bilan tekshiring.",
+  })[language] || "Уточните операцию и направление болта: приведённые условия сами по себе не подтверждают конфликт для одного и того же крепежа. Применимую процедуру и редакцию руководства должен подтвердить старший механик.";
   const citations = relevant.map(({ manual, pdfPage, text }) => `${manual.title} · PDF ${pdfPage}: «${text.replace(/\s+/gu, " ").trim()}»`);
-  return { manualAssessment: "conflict", answer: [intro, ...citations].join("\n\n"), results: relevant };
+  return { manualAssessment: conflict ? "conflict" : "insufficient_evidence", answer: [intro, ...citations].join("\n\n"), results: relevant };
 }
 
 // The model selects source lines. All displayed words and numbers come from the indexed PDF.

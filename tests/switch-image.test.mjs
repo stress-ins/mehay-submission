@@ -56,7 +56,7 @@ test('failed inspection of an existing app refuses the switch before pulling the
     await writeFile(dockerPath, `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$DOCKER_CALLS"
 if [[ "$1 $2" == 'compose version' ]]; then exit 0; fi
-if [[ "$1 $2 $3" == 'container ls -a' ]]; then echo mehay; exit 0; fi
+if [[ "$1 $2 $3" == 'container ls -a' ]]; then printf 'mehay\\nmehay-mock-ml\\nmehay-mock-toir\\n'; exit 0; fi
 if [[ "$1" == inspect ]]; then exit 2; fi
 exit 0
 `);
@@ -84,7 +84,7 @@ test('failed inspection of the TOIR mock refuses the switch before pulling the c
     await writeFile(dockerPath, `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$DOCKER_CALLS"
 if [[ "$1 $2" == 'compose version' ]]; then exit 0; fi
-if [[ "$1 $2 $3" == 'container ls -a' ]]; then printf 'mehay-mock-ml\\nmehay-mock-toir\\n'; exit 0; fi
+if [[ "$1 $2 $3" == 'container ls -a' ]]; then printf 'mehay\\nmehay-mock-ml\\nmehay-mock-toir\\n'; exit 0; fi
 if [[ "$1" == inspect ]]; then
   if [[ "${'${*: -1}'}" == mehay-mock-toir ]]; then exit 2; fi
   echo 'ghcr.io/example/mehay-mocks@sha256:${'b'.repeat(64)}'
@@ -195,12 +195,46 @@ exit 0
     assert.equal(second.status, 1);
 
     const calls = await readFile(callsFile, 'utf8');
+    assert.match(calls, new RegExp(`compose .*up -d --no-build --pull never\\|${image.replaceAll(':', '\\:')}\\|${mocksImage.replaceAll(':', '\\:')}\\|${mocksImage.replaceAll(':', '\\:')}\\|${mocksImage.replaceAll(':', '\\:')}`));
     const restores = calls.match(new RegExp(`compose --env-file /etc/mehay/mehay\\.env -f deploy/compose\\.legacy\\.yaml up -d --no-build --pull never\\|${previousImage.replaceAll(':', '\\:')}\\|\\|${mocksImage.replaceAll(':', '\\:')}\\|ghcr\\.io/example/mehay-mock-toir@sha256:${'d'.repeat(64)}`, 'g')) ?? [];
     assert.equal(restores.length, 2);
     assert.equal((calls.split('compose --env-file /etc/mehay/mehay.env -f deploy/compose.legacy.yaml rm -sf mock-ml mock-toir').length - 1), 0);
     assert.equal(await readFile(upCountFile, 'utf8'), '4');
     assert.equal(await readFile(mocksStateFile, 'utf8'), mocksImage);
     assert.equal(await readFile(toirStateFile, 'utf8'), `ghcr.io/example/mehay-mock-toir@sha256:${'d'.repeat(64)}`);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('mismatched private source mounts fail closed before image pulls', async () => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'mehay-switch-mount-mismatch-'));
+  const binDir = path.join(tempDir, 'bin');
+  const callsFile = path.join(tempDir, 'docker-calls');
+  const dockerPath = path.join(binDir, 'docker');
+  try {
+    await mkdir(binDir);
+    await writeFile(dockerPath, `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$DOCKER_CALLS"
+if [[ "$1 $2" == 'compose version' ]]; then exit 0; fi
+if [[ "$1 $2 $3" == 'container ls -a' ]]; then printf 'mehay\\nmehay-mock-ml\\nmehay-mock-toir\\n'; exit 0; fi
+if [[ "$1" == inspect && "$*" == *"{{.Config.Image}}"* ]]; then case "${'${*: -1}'}" in mehay) echo "$APP_IMAGE" ;; *) echo "$MOCK_IMAGE" ;; esac; exit 0; fi
+if [[ "$1" == inspect && "$*" == *"{{range .Mounts}}"* ]]; then
+  if [[ "$*" == *"{{.RW}}"* ]]; then echo false; exit 0; fi
+  case "${'${*: -1}'}" in mehay) echo /private/releases/${'e'.repeat(64)} ;; mehay-mock-ml) echo /private/releases/${'f'.repeat(64)} ;; esac
+  exit 0
+fi
+exit 0
+`);
+    await chmod(dockerPath, 0o755);
+    const result = spawnSync('bash', [scriptPath, image, mocksImage], { encoding: 'utf8', env: { ...process.env, APP_IMAGE: image, MOCK_IMAGE: mocksImage, DOCKER_CALLS: callsFile, MEHAY_DEPLOY_ROOT: tempDir, PATH: `${binDir}:/usr/bin:/bin` } });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /existing private source mounts differ/);
+    assert.doesNotMatch(await readFile(callsFile, 'utf8'), /pull|compose .* up/);
+    const tagResult = spawnSync('bash', [scriptPath, image, mocksImage], { encoding: 'utf8', env: { ...process.env, APP_IMAGE: 'ghcr.io/example/mehay:latest', MOCK_IMAGE: mocksImage, DOCKER_CALLS: callsFile, MEHAY_DEPLOY_ROOT: tempDir, PATH: `${binDir}:/usr/bin:/bin` } });
+    assert.equal(tagResult.status, 1);
+    assert.match(tagResult.stderr, /existing deployment uses mutable images/);
+    assert.doesNotMatch(await readFile(callsFile, 'utf8'), /pull|compose .* up/);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

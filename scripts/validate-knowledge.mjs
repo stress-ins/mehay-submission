@@ -1,12 +1,26 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 function readJson(filename) {
   try { return JSON.parse(readFileSync(filename, "utf8")); }
   catch { throw new Error("private materials are missing or invalid"); }
+}
+
+function hasVisiblePdfPage(filename, page) {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "mehay-pdf-check-"));
+  const prefix = path.join(directory, "page");
+  try {
+    const rendered = spawnSync("pdftoppm", ["-f", String(page), "-l", String(page), "-singlefile", "-png", "-r", "40", filename, prefix], { stdio: "ignore", timeout: 10_000 });
+    if (rendered.status !== 0) return false;
+    const check = spawnSync(process.execPath, ["-e", "import sharp from 'sharp'; const s=await sharp(process.argv[1]).stats(); process.exit(s.entropy>0.01&&s.channels.some(c=>c.min<245&&c.max>250)?0:1)", `${prefix}.png`], { stdio: "ignore", timeout: 10_000 });
+    return check.status === 0;
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 export function validateKnowledge(root, mockDataPath) {
@@ -39,14 +53,21 @@ export function validateKnowledge(root, mockDataPath) {
     const info = spawnSync("pdfinfo", [filename], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" }, stdio: ["ignore", "pipe", "ignore"], timeout: 10_000, maxBuffer: 64 * 1024 });
     const pdfPageCount = info.stdout?.match(/^Pages:\s+(\d+)\s*$/m)?.[1];
     if (info.status !== 0 || Number(pdfPageCount) !== manual.pageCount) throw new Error("private PDF page count does not match its index");
+    const extracted = spawnSync("pdftotext", ["-layout", "-enc", "UTF-8", filename, "-"], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" }, stdio: ["ignore", "pipe", "ignore"], timeout: 20_000, maxBuffer: 16 * 1024 * 1024 });
+    if (extracted.status !== 0) throw new Error("private PDF text cannot be verified");
+    manual.extractedPages = extracted.stdout.split("\f");
     digests.add(digest);
   }
   const guidance = readJson(path.join(root, "guidance.json"));
   if (!Array.isArray(guidance?.guidance) || !guidance.guidance.length) throw new Error("private guidance is incomplete");
   const manualsById = new Map(manuals.map((manual) => [manual.id, manual]));
+  const renderedPages = new Set();
   const validateGuidance = (item) => {
     const manual = manualsById.get(item?.manualId);
     const page = manual?.pages.find(({ pdfPage }) => pdfPage === item?.pdfPage)?.text;
+    const physicalPage = manual?.extractedPages[item?.pdfPage - 1];
+    const quote = typeof item?.quote === "string" ? item.quote.toLocaleLowerCase("ru").replace(/\s+/gu, " ") : "";
+    const physicalHasQuote = typeof physicalPage === "string" && physicalPage.toLocaleLowerCase("ru").replace(/\s+/gu, " ").includes(quote);
     if (typeof item?.engineModel !== "string" || typeof item.anomalyType !== "string" || !manual ||
       !Number.isSafeInteger(item.pdfPage) || item.pdfPage < 1 || typeof item.text !== "string" || !item.text.trim() ||
       typeof item.quote !== "string" || !item.quote.trim() ||
@@ -56,16 +77,23 @@ export function validateKnowledge(root, mockDataPath) {
         Object.entries(item.translations).some(([language, text]) => !["en", "hi", "tg", "uz"].includes(language) || typeof text !== "string" || !text.trim())))) {
       throw new Error("private guidance is invalid");
     }
+    if (!physicalHasQuote) {
+      const key = `${item.manualId}:${item.pdfPage}`;
+      if (!renderedPages.has(key)) {
+        if (!hasVisiblePdfPage(path.join(root, "pdf", manual.filename), item.pdfPage)) throw new Error("private cited PDF page is blank or cannot render");
+        renderedPages.add(key);
+      }
+    }
   };
   for (const manual of manuals) {
     if (!Array.isArray(manual.procedures)) continue;
     for (const item of manual.procedures) {
       if (item?.sourceSha256 !== manual.sha256) continue;
-      validateGuidance({ ...item, manualId: manual.id });
+      validateGuidance({ ...item, manualId: item.manualId ?? manual.id });
       if (!Array.isArray(item.procedure) || !item.procedure.length) throw new Error("private procedure is invalid");
       for (const step of item.procedure) {
         if (typeof step?.title !== "string" || !step.title.trim()) throw new Error("private procedure is invalid");
-        validateGuidance({ ...step, engineModel: item.engineModel, anomalyType: item.anomalyType, manualId: manual.id });
+        validateGuidance({ ...step, engineModel: item.engineModel, anomalyType: item.anomalyType, manualId: step.manualId ?? item.manualId ?? manual.id });
       }
     }
   }

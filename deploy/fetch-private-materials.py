@@ -87,10 +87,10 @@ def validate_prepared_knowledge(root):
     if not isinstance(guidance, dict) or not isinstance(guidance.get("guidance"), list) or not guidance["guidance"]:
         raise FetchError("incomplete prepared guidance")
 
-    def validate_guidance(item, manual_id=None):
+    def validate_guidance(item):
         if not isinstance(item, dict):
             raise FetchError("invalid prepared guidance")
-        manual = manuals_by_id.get(manual_id or item.get("manualId"))
+        manual = manuals_by_id.get(item.get("manualId"))
         page_number = item.get("pdfPage")
         page = next((p["text"] for p in manual["pages"] if p["pdfPage"] == page_number), None) if manual else None
         engine = item.get("engineModel")
@@ -109,19 +109,20 @@ def validate_prepared_knowledge(root):
                 for language, text in translations.items())):
             raise FetchError("invalid prepared guidance")
 
-    for manual_id, manual in manuals_by_id.items():
+    for manual in manuals_by_id.values():
         for item in manual.get("procedures") or []:
             if not isinstance(item, dict):
                 raise FetchError("invalid prepared procedure")
             if item.get("sourceSha256") != manual["sha256"]:
                 continue
-            validate_guidance({**item, "manualId": manual_id})
+            validate_guidance({**item, "manualId": item.get("manualId", manual["id"])})
             if not isinstance(item.get("procedure"), list) or not item["procedure"]:
                 raise FetchError("invalid prepared procedure")
             for step in item["procedure"]:
                 if not isinstance(step, dict) or not isinstance(step.get("title"), str) or not step["title"].strip():
                     raise FetchError("invalid prepared procedure")
-                validate_guidance({**step, "engineModel": item["engineModel"], "anomalyType": item["anomalyType"], "manualId": manual_id})
+                validate_guidance({**step, "engineModel": item["engineModel"], "anomalyType": item["anomalyType"],
+                                   "manualId": step.get("manualId", item.get("manualId", manual["id"]))})
     for item in guidance["guidance"]:
         validate_guidance(item)
         if "procedure" not in item:
@@ -131,7 +132,7 @@ def validate_prepared_knowledge(root):
         for step in item["procedure"]:
             if not isinstance(step, dict) or not isinstance(step.get("title"), str) or not step["title"].strip():
                 raise FetchError("invalid prepared procedure")
-            validate_guidance({**step, "engineModel": item["engineModel"], "anomalyType": item["anomalyType"], "manualId": item["manualId"]})
+            validate_guidance({**step, "engineModel": item["engineModel"], "anomalyType": item["anomalyType"]})
     return hashes
 
 
@@ -294,8 +295,8 @@ def file_manifest(root):
     return manifest
 
 
-def prepare_source_directories(root, knowledge_root):
-    protected = [Path("/opt/mehay/data").resolve(), knowledge_root]
+def validate_source_path(root, knowledge_root):
+    protected = [Path("/opt/mehay/data").resolve(), Path("/opt/mehay/deploy").resolve(), knowledge_root]
     if root == Path("/") or any(root == item or root in item.parents or item in root.parents for item in protected):
         raise FetchError("private source directory overlaps application data")
     current = Path(root.anchor)
@@ -304,11 +305,7 @@ def prepare_source_directories(root, knowledge_root):
         try:
             mode = current.lstat().st_mode
         except FileNotFoundError:
-            current.mkdir(mode=0o700)
-            if os.geteuid() == 0:
-                os.chown(current, 0, 1000)
-                os.chmod(current, 0o750)
-            continue
+            break
         if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
             raise FetchError("private source path contains an unsafe component")
         if os.geteuid() == 0:
@@ -322,10 +319,6 @@ def prepare_source_directories(root, knowledge_root):
         try:
             mode = directory.lstat().st_mode
         except FileNotFoundError:
-            directory.mkdir(mode=0o700)
-            if os.geteuid() == 0:
-                os.chown(directory, 0, 1000)
-                os.chmod(directory, 0o750)
             continue
         if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
             raise FetchError("private source path contains an unsafe component")
@@ -334,6 +327,25 @@ def prepare_source_directories(root, knowledge_root):
             permissions = stat.S_IMODE(info.st_mode)
             if info.st_uid != 0 or info.st_gid != 1000 or permissions & 0o050 != 0o050 or permissions & 0o027:
                 raise FetchError("existing private source directory has unsafe ownership or permissions")
+
+
+def prepare_source_directories(root, knowledge_root):
+    validate_source_path(root, knowledge_root)
+    current = Path(root.anchor)
+    for part in root.parts[1:]:
+        current /= part
+        if current.exists():
+            continue
+        current.mkdir(mode=0o700)
+        if os.geteuid() == 0:
+            os.chown(current, 0, 1000)
+            os.chmod(current, 0o750)
+    releases = root / "releases"
+    if not releases.exists():
+        releases.mkdir(mode=0o700)
+        if os.geteuid() == 0:
+            os.chown(releases, 0, 1000)
+            os.chmod(releases, 0o750)
 
 
 def publish_release(staged, release):
@@ -355,13 +367,22 @@ def main():
         raise FetchError("private source directory is unsafe")
     if source_root != source_root_input:
         raise FetchError("private source directory must not traverse symlinks")
-    knowledge_root = Path(os.environ.get("MEHAY_KB_DIR", "/opt/mehay/knowledge")).resolve()
+    knowledge_input = Path(os.environ.get("MEHAY_KB_DIR", "/opt/mehay/knowledge"))
+    if not knowledge_input.is_absolute() or any(part in {".", ".."} for part in str(knowledge_input).split("/")):
+        raise FetchError("knowledge directory must be an absolute canonical path")
+    knowledge_root = knowledge_input.resolve()
+    if knowledge_root != knowledge_input:
+        raise FetchError("knowledge directory must not traverse symlinks")
     if not source:
         raise FetchError("private source is not configured")
     expected_archive = os.environ.get("MEHAY_PRIVATE_ARCHIVE_SHA256", "").lower()
     if len(expected_archive) != 64 or any(char not in "0123456789abcdef" for char in expected_archive):
         raise FetchError("private archive SHA-256 is not configured")
     expected = validate_prepared_knowledge(knowledge_root)
+    validate_source_path(source_root, knowledge_root)
+    if "--preflight-paths" in sys.argv[1:]:
+        print("private material paths verified")
+        return
     prepare_source_directories(source_root, knowledge_root)
     releases = source_root / "releases"
     with tempfile.TemporaryDirectory(prefix="mehay-private-") as temporary:

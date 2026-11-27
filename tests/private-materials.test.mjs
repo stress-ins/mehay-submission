@@ -23,10 +23,10 @@ async function sourceFixture(temp) {
     const bytes = syntheticPdf(`Synthetic diagnostic reference ${i}`);
     await writeFile(path.join(source, filename), bytes);
     await writeFile(path.join(knowledge, "pdf", filename), bytes);
-    manuals.push({ id: `manual-${i}`, title: `Synthetic manual ${i}`, filename, sha256: createHash("sha256").update(bytes).digest("hex"), engineKeys: ["ямз-236м2"], pageCount: 2, pages: [{ pdfPage: 1, text: "" }, { pdfPage: 2, text: "synthetic fixture reference" }] });
+    manuals.push({ id: `manual-${i}`, title: `Synthetic manual ${i}`, filename, sha256: createHash("sha256").update(bytes).digest("hex"), engineKeys: ["ямз-236м2"], pageCount: 2, pages: [{ pdfPage: 1, text: `synthetic diagnostic reference ${i}` }, { pdfPage: 2, text: `synthetic diagnostic reference ${i}` }] });
   }
   await writeFile(path.join(knowledge, "index.json"), JSON.stringify({ version: 1, manuals }));
-  await writeFile(path.join(knowledge, "guidance.json"), JSON.stringify({ guidance: [{ manualId: "manual-0", pdfPage: 2, engineModel: "ямз-236м2", anomalyType: "F01", text: "synthetic fixture reference", quote: "fixture reference" }] }));
+  await writeFile(path.join(knowledge, "guidance.json"), JSON.stringify({ guidance: [{ manualId: "manual-0", pdfPage: 1, engineModel: "ямз-236м2", anomalyType: "F01", text: "synthetic fixture reference", quote: "diagnostic reference" }] }));
   const archive = path.join(source, "bundle", "organizer.zip");
   const vehicleJson = JSON.stringify(syntheticNeurodvs);
   const script = `from zipfile import ZipFile\np='${archive}'\nfiles={'vendor/mock_ml/app.py':'app = True','vendor/mock_toir/app.py':'app = True','vendor/data/vehicles.json':${JSON.stringify(vehicleJson)}}\nwith ZipFile(p,'w') as z:\n for name,data in files.items(): z.writestr(name,data)\n`;
@@ -34,8 +34,8 @@ async function sourceFixture(temp) {
   return { source, knowledge, archive, archiveBytes: await readFile(archive) };
 }
 
-function fetch(env) {
-  return spawnSync("python3", [path.join(root, "deploy/fetch-private-materials.py")], { encoding: "utf8", env: { ...process.env, ...env } });
+function fetch(env, args = []) {
+  return spawnSync("python3", [path.join(root, "deploy/fetch-private-materials.py"), ...args], { encoding: "utf8", env: { ...process.env, ...env } });
 }
 
 test("private loader stages only verified organizer mock runtime and keeps the prior release on failure", async () => {
@@ -43,10 +43,27 @@ test("private loader stages only verified organizer mock runtime and keeps the p
   try {
     const { source, knowledge, archive, archiveBytes } = await sourceFixture(temp);
     const canonicalTemp = await realpath(temp);
+    const canonicalKnowledge = await realpath(knowledge);
     const destination = path.join(canonicalTemp, "private-source");
     const archiveSha256 = createHash("sha256").update(archiveBytes).digest("hex");
-    const env = { MEHAY_PRIVATE_SOURCE: source, MEHAY_PRIVATE_SOURCE_DIR: destination, MEHAY_PRIVATE_ARCHIVE_SHA256: archiveSha256, MEHAY_KB_DIR: knowledge };
-    const canonicalKnowledge = await realpath(knowledge);
+    const env = { MEHAY_PRIVATE_SOURCE: source, MEHAY_PRIVATE_SOURCE_DIR: destination, MEHAY_PRIVATE_ARCHIVE_SHA256: archiveSha256, MEHAY_KB_DIR: canonicalKnowledge };
+    const crossDocumentGuidance = JSON.parse(await readFile(path.join(knowledge, "guidance.json"), "utf8"));
+    crossDocumentGuidance.guidance[0].procedure = [{ title: "Cross manual check", manualId: "manual-1", pdfPage: 1, quote: "diagnostic reference", text: "cross manual evidence" }];
+    await writeFile(path.join(knowledge, "guidance.json"), JSON.stringify(crossDocumentGuidance));
+    const fixtureVehicles = path.join(temp, "fixture-vehicles.json");
+    await writeFile(fixtureVehicles, JSON.stringify(syntheticNeurodvs));
+    assert.doesNotThrow(() => validateKnowledge(knowledge, fixtureVehicles));
+    const firstPdf = path.join(knowledge, "pdf", "manual-0.pdf");
+    const originalPdf = await readFile(firstPdf);
+    const changedPdf = syntheticPdf("", "");
+    const indexed = JSON.parse(await readFile(path.join(knowledge, "index.json"), "utf8"));
+    indexed.manuals[0].sha256 = createHash("sha256").update(changedPdf).digest("hex");
+    await writeFile(firstPdf, changedPdf);
+    await writeFile(path.join(knowledge, "index.json"), JSON.stringify(indexed));
+    assert.throws(() => validateKnowledge(knowledge, fixtureVehicles), /cited PDF page is blank/);
+    await writeFile(firstPdf, originalPdf);
+    indexed.manuals[0].sha256 = createHash("sha256").update(originalPdf).digest("hex");
+    await writeFile(path.join(knowledge, "index.json"), JSON.stringify(indexed));
     const blockedOverlap = fetch({ ...env, MEHAY_PRIVATE_SOURCE_DIR: path.join(canonicalKnowledge, "private-source"), MEHAY_KB_DIR: canonicalKnowledge });
     assert.equal(blockedOverlap.status, 1);
     assert.match(blockedOverlap.stderr, /overlaps application data/);
@@ -57,6 +74,9 @@ test("private loader stages only verified organizer mock runtime and keeps the p
     const protectedDestination = fetch({ ...env, MEHAY_PRIVATE_SOURCE_DIR: "/opt/mehay/data" });
     assert.equal(protectedDestination.status, 1);
     assert.match(protectedDestination.stderr, /overlaps application data/);
+    const deployDestination = fetch({ ...env, MEHAY_PRIVATE_SOURCE_DIR: "/opt/mehay/deploy/materials" });
+    assert.equal(deployDestination.status, 1);
+    assert.match(deployDestination.stderr, /overlaps application data/);
     const target = path.join(canonicalTemp, "symlink-target");
     const link = path.join(canonicalTemp, "source-link");
     await mkdir(target);
@@ -65,6 +85,16 @@ test("private loader stages only verified organizer mock runtime and keeps the p
     assert.equal(linkedDestination.status, 1);
     assert.match(linkedDestination.stderr, /traverse symlinks/);
     assert.deepEqual(await readdir(target), []);
+    const knowledgeLink = path.join(canonicalTemp, "knowledge-link");
+    await symlink(knowledge, knowledgeLink);
+    const linkedKnowledge = fetch({ ...env, MEHAY_KB_DIR: knowledgeLink }, ["--preflight-paths"]);
+    assert.equal(linkedKnowledge.status, 1);
+    assert.match(linkedKnowledge.stderr, /knowledge directory must not traverse symlinks/);
+    await assert.rejects(readdir(destination));
+    const preflight = fetch(env, ["--preflight-paths"]);
+    assert.equal(preflight.status, 0, preflight.stderr);
+    assert.match(preflight.stdout, /paths verified/);
+    await assert.rejects(readdir(destination));
     const result = fetch(env);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout.trim(), /^[a-f0-9]{64}$/);

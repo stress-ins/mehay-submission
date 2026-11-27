@@ -58,6 +58,7 @@ import { MechanicLanguage, mechanicInstruction } from "./MechanicLanguage";
 import { repairExample } from "./repairExample";
 import RepairExperience, { type RepairExperienceData } from "./RepairExperience";
 import PartOffers from "./PartOffers";
+import AdminQaReview from "./AdminQaReview";
 import NeuroWorkflow, { NeuroChatHistory, type NeuroChatTurn, type ManualEvidenceItem } from "./NeuroWorkflow";
 import { selectNeuroTool } from "./neuroTools";
 import NeuroFleetOverview, { MeasurementTrend, type NeuroPriorityVehicle, type StoredHistory, type NeuroTrendSession } from "./NeuroFleetOverview";
@@ -583,7 +584,7 @@ type NeuroDiagnosis = {
   guidance: {
     status: "normal" | "anomaly" | "check_failed" | "uncertain" | "stop" | "model_conflict" | "warning_confirmation_required";
     message: string;
-    recommendations: { procedure?: ManualEvidenceItem[]; text: string; translations?: Partial<Record<"en" | "hi" | "tg" | "uz", string>>; excerpt?: string; stepKey?: string; manual: string; pdfPage: number; url: string }[];
+    recommendations: { operationKind?: "repair" | "inspection"; procedure?: ManualEvidenceItem[]; text: string; translations?: Partial<Record<"en" | "hi" | "tg" | "uz", string>>; excerpt?: string; stepKey?: string; manual: string; pdfPage: number; url: string }[];
     canCreateTicket: boolean;
     ticketBlockReason?: string;
     urgency?: "low" | "medium" | "high";
@@ -676,6 +677,7 @@ function VehicleMeasurementSummary({ vehicleId }: { vehicleId: string }) {
     : <p role="status">{failed ? "Не удалось загрузить историю замеров." : "Загружаем историю замеров…"}</p>;
 }
 
+type NeuroExchange = { id: string; sessionId: string; question: string; answer: string; evidence: ManualEvidenceItem[] };
 function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHistorical }: { routerConfigured: boolean; cardId: string; requestedSession: string; onProcureHistorical: (part: string) => void }) {
   const [fleet, setFleet] = useState<NeuroFleetVehicle[]>([]);
   const [vehicleHistory, setVehicleHistory] = useState<StoredHistory | null>(null);
@@ -697,7 +699,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
   const [answerUnavailable, setAnswerUnavailable] = useState(false);
   const [questionBusy, setQuestionBusy] = useState(false);
   const [voiceTicketPending, setVoiceTicketPending] = useState<VoiceTicketBinding<NeuroDiagnosis> | null>(null);
-  const [chatByContext, setChatByContext] = useState<Record<string, NeuroChatTurn[]>>({});
+  const [chatByContext, setChatByContext] = useState<Record<string, NeuroExchange[]>>({});
   const [planStep, setPlanStep] = useState(0);
   const [planMode, setPlanMode] = useState(false);
   const [performedSteps, setPerformedSteps] = useState<number[]>([]);
@@ -737,7 +739,23 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
       .catch(cause => { if (active) setExperience({ diagnosis, data: null, error: cause instanceof Error ? cause.message : "Историю ремонтов загрузить не удалось." }); });
     return () => { active = false; };
   }, [vehicleId, sessionId, diagnosis, hasRepairHistory]);
-  const chatTurns = chatByContext[contextKey] || [];
+  const conversationPath = `/api/neuro/vehicles/${encodeURIComponent(vehicleId)}/sessions/${encodeURIComponent(sessionId)}/conversation`;
+  const [conversationNotice, setConversationNotice] = useState("");
+  const chatTurns: NeuroChatTurn[] = (chatByContext[contextKey] || []).flatMap(exchange => [
+    { role: "mechanic", sessionId: exchange.sessionId, text: exchange.question, evidence: [] },
+    { role: "assistant", sessionId: exchange.sessionId, text: exchange.answer, evidence: exchange.evidence },
+  ]);
+  useEffect(() => {
+    setConversationNotice("");
+    if (!vehicleId || !sessionId) return;
+    let active = true;
+    api<{ exchanges: NeuroExchange[] }>(conversationPath).then(({ exchanges }) => {
+      if (!active) return;
+      const ids = new Set(exchanges.map(exchange => exchange.id));
+      setChatByContext(history => ({ ...history, [contextKey]: [...exchanges, ...(history[contextKey] || []).filter(exchange => !ids.has(exchange.id))].slice(-50) }));
+    }).catch(() => { if (active) setConversationNotice("Не удалось загрузить предыдущие вопросы по этой машине."); });
+    return () => { active = false; };
+  }, [vehicleId, sessionId, contextKey, conversationPath]);
 
   useEffect(() => {
     let active = true;
@@ -796,8 +814,11 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     autoDiagnosed.current = key;
     void diagnose();
   }, [vehicleId, sessionId, currentVehicle, currentSession]);
-  function addChatTurn(turn: NeuroChatTurn) {
-    setChatByContext((history) => ({ ...history, [contextKey]: [...(history[contextKey] || []), turn] }));
+  function rememberExchange(question: string, answer: string, evidence: ManualEvidenceItem[] = []) {
+    const exchange = { id: crypto.randomUUID(), sessionId, question, answer, evidence };
+    setChatByContext(history => ({ ...history, [contextKey]: [...(history[contextKey] || []), exchange].slice(-50) }));
+    void api(conversationPath, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(exchange) })
+      .catch(() => { if (activeContext.current === contextKey) setConversationNotice("Ответ показан. Сохранить его в истории замера не удалось."); });
   }
   function speakVoiceReply(text: string, language = voiceLanguage) {
     if (!voiceReplyPending.current) return;
@@ -869,7 +890,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
         const noChecks = ({ ru: "Замеров нет.", en: "No measurements.", hi: "कोई मापन नहीं।", tg: "Санҷиш нест.", uz: "O‘lchovlar yo‘q." } as const)[voiceLanguage];
         const noTickets = ({ ru: "Заявок нет.", en: "No tickets.", hi: "कोई टिकट नहीं।", tg: "Дархост нест.", uz: "Arizalar yo‘q." } as const)[voiceLanguage];
         const reply = `${lead} ${labels.measurements} ${checks.length ? checks.join("; ") : noChecks} ${labels.tickets} ${tickets.length ? tickets.join("; ") : noTickets}`;
-        setAnswerText(reply); addChatTurn({ role: "mechanic", text: query, evidence: [] }); addChatTurn({ role: "assistant", text: reply, evidence: [] }); speakVoiceReply(reply);
+        setAnswerText(reply); rememberExchange(query, reply); speakVoiceReply(reply);
       } catch (cause) { if (!isCurrent()) return; voiceReplyPending.current = false; setError(cause instanceof Error ? cause.message : "Историю машины загрузить не удалось."); }
       finally { if (isCurrent()) setQuestionBusy(false); }
       return;
@@ -879,13 +900,13 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
       try {
         if (diagnosis?.guidance.status !== "anomaly") {
           const reply = ({ ru: "Сначала выполните диагностику, чтобы подобрать сопоставимые записи истории ремонта.", en: "Run diagnostics first to find comparable repair records.", hi: "मिलते-जुलते मरम्मत रिकॉर्ड खोजने के लिए पहले निदान करें।", tg: "Барои ёфтани сабтҳои монанд аввал ташхис гузаронед.", uz: "O‘xshash taʼmirlash yozuvlarini topish uchun avval tashxis o‘tkazing." } as const)[voiceLanguage];
-          setAnswerText(reply); addChatTurn({ role: "mechanic", text: query, evidence: [] }); addChatTurn({ role: "assistant", text: reply, evidence: [] }); speakVoiceReply(reply);
+          setAnswerText(reply); rememberExchange(query, reply); speakVoiceReply(reply);
           return;
         }
         const history = await api<RepairExperienceData>(`/api/neuro/experience?${new URLSearchParams({ vehicleId, sessionId })}`);
         if (!isCurrent()) return;
         const best = repairExample(history.cases);
-        if (!best) { const reply = historyUnavailableCopy[voiceLanguage]; setAnswerText(reply); addChatTurn({ role: "mechanic", text: query, evidence: [] }); addChatTurn({ role: "assistant", text: reply, evidence: [] }); speakVoiceReply(reply); return; }
+        if (!best) { const reply = historyUnavailableCopy[voiceLanguage]; setAnswerText(reply); rememberExchange(query, reply); speakVoiceReply(reply); return; }
         const isHours = historyAnswerKind(query, voiceLanguage) === "hours";
         const sample = best.synthetic ? ({ ru: "синтетические данные", en: "synthetic data", hi: "सिंथेटिक डेटा", tg: "маълумоти синтетикӣ", uz: "синтетик маълумот" } as const)[voiceLanguage] : "";
         const caveat = ({ ru: "Ориентир, не норматив.", en: "For reference only; not a standard.", hi: "यह केवल संदर्भ है, मानक नहीं।", tg: "Ин танҳо маълумоти роҳнамо аст, меъёр нест.", uz: "Bu faqat mo‘ljal, me’yor emas." } as const)[voiceLanguage];
@@ -903,8 +924,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
           ? ({ ru: `В похожей записи указано ${best.actualHours} фактических ч. ${sample} ${caveat}`, en: `A comparable record lists ${best.actualHours} actual hours. ${sample} ${caveat}`, hi: `मिलते-जुलते रिकॉर्ड में ${best.actualHours} वास्तविक घंटे दर्ज हैं। ${sample} ${caveat}`, tg: `Дар сабти монанд ${best.actualHours} соати воқеӣ нишон дода шудааст. ${sample} ${caveat}`, uz: `O‘xshash yozuvda ${best.actualHours} amaldagi soat qayd etilgan. ${sample} ${caveat}` } as const)[voiceLanguage]
           : ({ ru: `В похожей записи указана деталь: ${best.part || partMissing}. ${sample} Применимость проверяет механик.`, en: `A comparable record lists: ${best.part || partMissing}. ${sample} A mechanic must confirm applicability.`, hi: `मिलते-जुलते रिकॉर्ड में पुर्जा: ${best.part || partMissing}। ${sample} लागू होने की पुष्टि मैकेनिक करे।`, tg: `Дар сабти монанд қисм: ${best.part || partMissing}. ${sample} Механик бояд мувофиқатро санҷад.`, uz: `O‘xshash yozuvda detal: ${best.part || partMissing}. ${sample} Mosligini mexanik tekshirishi kerak.` } as const)[voiceLanguage];
         setAnswerText(historyAnswer);
-        addChatTurn({ role: "mechanic", text: query, evidence: [] });
-        addChatTurn({ role: "assistant", text: historyAnswer, evidence: [] });
+        rememberExchange(query, historyAnswer);
         speakVoiceReply(historyAnswer);
       } catch (cause) { if (!isCurrent()) return; voiceReplyPending.current = false; setError(cause instanceof Error ? cause.message : "Историю ремонтов загрузить не удалось."); }
       finally { if (isCurrent()) setQuestionBusy(false); }
@@ -912,16 +932,15 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     }
     setQuestionBusy(true); setError(""); setAnswers(null); setAnswerText(""); setAnswerUnavailable(false);
     try {
-      const previousQuestion = [...chatTurns].reverse().find((turn) => turn.role === "mechanic")?.text;
+      const previousQuestion = [...chatTurns].reverse().find((turn) => turn.role === "mechanic" && turn.sessionId === sessionId)?.text;
       const result = await api<{ answer?: string; answerUnavailable?: boolean; results: { text: string; manual: { title: string }; pdfPage: number; url: string }[] }>("/api/manuals/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ engineModel: currentVehicle.engine_model, query, answer: true, language: voiceLanguage, ...(previousQuestion ? { previousQuestion } : {}), vehicleId, vehicleModel: currentVehicle.model, sessionId, fault: diagnosis?.guidance.status === "anomaly" ? String(rawDiagnosis.anomaly_title || "") : "" }) });
       if (!isCurrent()) return;
       const evidence: ManualEvidenceItem[] = result.results.map((item) => ({ text: item.text, manual: item.manual.title, pdfPage: item.pdfPage, url: item.url }));
       setAnswers(evidence);
       setAnswerText(result.answer || evidence[0]?.text || "");
       setAnswerUnavailable(Boolean(result.answerUnavailable));
-      addChatTurn({ role: "mechanic", text: query, evidence: [] });
       const reply = result.answer || evidence[0]?.text || (result.answerUnavailable ? "Не удалось подготовить ответ по источникам." : "Данных в руководствах недостаточно для ответа.");
-      addChatTurn({ role: "assistant", text: reply, evidence });
+      rememberExchange(query, reply, evidence);
       if (result.answer || evidence.length) speakVoiceReply(reply);
       else voiceReplyPending.current = false;
     } catch (cause) { if (!isCurrent()) return; voiceReplyPending.current = false; setError(cause instanceof Error ? cause.message : "Поиск по руководствам не выполнен"); }
@@ -936,7 +955,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     const isCurrent = () => run === diagnosisRun.current && activeContext.current === contextKey;
     setBusy(true); setError("");
     try {
-      const result = await api<{ previewToken: string; preview: NonNullable<typeof ticketPreview>["preview"] }>("/api/neuro/tickets/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicleId, sessionId, urgency: draftUrgency, operations: diagnosis.guidance.recommendations.map((item) => item.text), ...(historicalPart ? { historicalPart } : {}) }) });
+      const result = await api<{ previewToken: string; preview: NonNullable<typeof ticketPreview>["preview"] }>("/api/neuro/tickets/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicleId, sessionId, urgency: draftUrgency, operations: diagnosis.guidance.recommendations.filter(item => item.operationKind === "repair").map((item) => item.text), ...(historicalPart ? { historicalPart } : {}) }) });
       if (isCurrent()) setTicketPreview(result);
     } catch (cause) { if (isCurrent()) setError(cause instanceof Error ? cause.message : "Не удалось подготовить просмотр заявки ТОиР"); }
     finally { if (isCurrent()) setBusy(false); }
@@ -1034,8 +1053,9 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
         <a href="#repair-experience" onClick={event => { event.preventDefault(); document.getElementById("repair-experience")?.focus(); }}>{ui("Посмотреть историю и детали")}</a>
         {repairRisk.synthetic && <small>{ui("Демонстрационная запись автопарка")}</small>}
       </aside>}
+      {diagnosis?.guidance.ticketBlockReason === "inspection_only" && <p role="status">{ui("Выполните проверку на месте и запишите результат осмотра в карточке машины.")}</p>}
       {diagnosis?.guidance.recommendations.length ? <div className="neuro-section"><h3>{ui("Рекомендации")}</h3><ul>{diagnosis.guidance.recommendations.map((item, i) => <li key={`${item.manual}-${item.pdfPage}-${i}`}>{item.text}{item.excerpt && item.excerpt !== item.text ? <details><summary>Основание в руководстве</summary><p className="neuro-excerpt">{item.excerpt}</p></details> : null} <a href={appPath(item.url)} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a> <button type="button" onClick={() => openRecommendationStep(i)}>{ui("Открыть этот шаг в плане работ")}</button></li>)}</ul></div> : null}
-      {diagnosis?.guidance.status === "anomaly" && !diagnosis.guidance.canCreateTicket && diagnosis.guidance.ticketBlockReason === "manual_evidence_required" && <aside className="neuro-defectoscopy" role="status"><strong>Нужна дефектовка</strong><p>{diagnosis.guidance.message} Для заявки ТОиР пока нет подтверждённой операции со ссылкой на руководство. Передайте машину механику для осмотра и дефектовки.</p></aside>}
+      {diagnosis?.guidance.status === "anomaly" && !diagnosis.guidance.canCreateTicket && diagnosis.guidance.ticketBlockReason === "manual_evidence_required" && <aside className="neuro-defectoscopy" role="status"><strong>Нужна дефектовка</strong><p>{diagnosis.guidance.message} Для заявки ТОиР пока нет подтверждённой операции со ссылкой на руководство. Запишите условия замера и результаты осмотра в карточке машины.</p></aside>}
       {diagnosis?.guidance.canCreateTicket && <div className="neuro-ticket" style={{ flexWrap: "wrap" }}><label>{ui("Приоритет заявки")}<select value={draftUrgency} disabled={busy || !!ticketPreview || !!ticketId} onChange={(e) => setDraftUrgency(e.target.value as "low" | "medium" | "high")}><option value="high">{ui("Высокий · до следующего рейса")}</option><option value="medium">{ui("Средний · к ближайшему плановому ТО")}</option><option value="low">{ui("Низкий · к следующему осмотру")}</option></select></label><PButton type="button" variant="primary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket()}>{ui(ticketId ? "Заявка создана" : "Подготовить просмотр заявки")}</PButton>{historicalPart && <p>{ui("Кандидат детали из истории:")} <strong>{historicalPart}</strong>. {ui("Требует проверки применимости.")}</p>}{ticketPreview && <section className="neuro-ticket-preview" style={{ flex: "1 1 100%", width: "100%", minWidth: 0, boxSizing: "border-box" }} aria-label={ui("Проверка заявки перед отправкой")}><h3>{ui("Проверьте заявку перед передачей в ТОиР")}</h3><dl><div><dt>{ui("Машина / сессия")}</dt><dd>{ticketPreview.preview.vehicleId} · {ticketPreview.preview.sessionId}</dd></div><div><dt>{ui("Двигатель / код")}</dt><dd>{ticketPreview.preview.engineModel} · {ticketPreview.preview.faultCode}</dd></div><div><dt>{ui("Уверенность / качество")}</dt><dd>{ticketPreview.preview.confidence.percent === null ? ui("не определена") : `${ticketPreview.preview.confidence.percent}%`} (порог {ticketPreview.preview.confidence.thresholdPercent}%) · {ui(ticketPreview.preview.signalQuality.label)}</dd></div><div><dt>{ui("Приоритет")}</dt><dd>{ticketPreview.preview.urgencyMeaning}</dd></div><div><dt>{ui("Заключение")}</dt><dd>{ticketPreview.preview.conclusion}</dd></div><div><dt>{ui("Операции и основания")}</dt><dd><ul>{ticketPreview.preview.operations.map((item, index) => <li key={index}>{item.text} — {item.manual}, стр. {item.pdfPage}</li>)}</ul></dd></div>{ticketPreview.preview.historicalNote && <div><dt>{ui("Историческая подсказка")}</dt><dd>{ticketPreview.preview.historicalNote}</dd></div>}<div><dt>{ui("Запчасти")}</dt><dd>{ticketPreview.preview.spareParts.length ? ticketPreview.preview.spareParts.join(", ") : ui("Не указаны")}</dd></div></dl><p>{ui("Подтверждение отправит ровно этот просмотр. Голосовые команды не меняют приоритет и не подтверждают передачу.")}</p><PButton type="button" variant="primary" disabled={busy || !!ticketId || ticketPreview.preview.vehicleId !== vehicleId || ticketPreview.preview.sessionId !== sessionId} onClick={() => void confirmTicket()}>{ui("Подтвердить и передать в ТОиР")}</PButton> <PButton type="button" variant="secondary" disabled={busy} onClick={() => setTicketPreview(null)}>{ui("Отменить просмотр")}</PButton></section>}{ticketId && <p role="status">{ui("Номер заявки:")} <strong>{ticketId}</strong></p>}</div>}
       </>}
     </section>
@@ -1121,6 +1141,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
       <form onSubmit={(e) => void askManual(e)}><label>{ui("Вопрос или команда")}<textarea rows={3} maxLength={500} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder={ui("Можно ли своим ходом перегнать машину на базу?")} /></label><PButton type="submit" variant="primary" disabled={!currentVehicle || question.length < 3 || questionBusy || busy}>{ui(questionBusy ? "Ищем в руководствах…" : "Отправить")}</PButton></form>
       {answerUnavailable && <p className="auth-error" role="status">{ui("Сервис подготовки ответа недоступен. Откройте поиск по руководствам в общем помощнике, чтобы посмотреть страницы самостоятельно.")}</p>}
       {answerText && answerText !== voiceFeedback && <p className="neuro-answer" role="status">{answerText}</p>}
+      {conversationNotice && <p role="status">{ui(conversationNotice)}</p>}
       <NeuroChatHistory turns={chatTurns} appPath={appPath} />
       {answers && (answers.length ? <div className="neuro-section"><details><summary>{ui("Страницы руководства")} · {answers.length}</summary>{answers.map((item, i) => <article key={`${item.manual}-${item.pdfPage}-${i}`}><p>{item.text}</p><a href={appPath(item.url)} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a></article>)}</details></div> : !answerUnavailable && <p className="context-empty" role="status">{ui("В руководствах нет прямого основания для решения. Данных недостаточно: требуется оценка механика и дефектовка.")}</p>)}
     </section>
@@ -2741,7 +2762,7 @@ export default function App() {
             </div>
           ) : (
             <>
-              {page === "Пользователи" && authUser.role === "admin" && <AdminUsersPanel />}
+              {page === "Пользователи" && authUser.role === "admin" && <><AdminUsersPanel /><AdminQaReview api={api} /></>}
               {(page === "Обзор" || page === "Карточка") && (
                 <>
                   <section className="page-heading">

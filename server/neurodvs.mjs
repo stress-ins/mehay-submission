@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { recommendationsFor } from "./neurodvs-guidance.mjs";
+import { isRepairOperation, recommendationsFor } from "./neurodvs-guidance.mjs";
 import { repairExperience } from "./repair-experience.mjs";
 import { mountNeuroToolRouter } from "./neuro-tool-router.mjs";
 
@@ -81,6 +81,7 @@ export function vehicleMeasurementPriority(vehicle) {
 
 export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRecommendations = recommendationsFor, fetchImpl = fetch, mlUrl = process.env.MOCK_ML_URL || "http://127.0.0.1:8001", toirUrl = process.env.MOCK_TOIR_URL || "http://127.0.0.1:8002", timeoutMs = 5000 } = {}) {
   db.exec(`CREATE TABLE IF NOT EXISTS neuro_diagnoses(vehicle_id TEXT NOT NULL, session_id TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL, revision TEXT NOT NULL DEFAULT '', PRIMARY KEY(vehicle_id,session_id));
+    CREATE TABLE IF NOT EXISTS neuro_conversation(owner TEXT NOT NULL, vehicle TEXT NOT NULL, session TEXT NOT NULL, id TEXT NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, evidence TEXT NOT NULL, PRIMARY KEY(owner,vehicle,session,id));
     CREATE TABLE IF NOT EXISTS neuro_tickets(vehicle_id TEXT NOT NULL, session_id TEXT NOT NULL, state TEXT NOT NULL, result TEXT, updated_at TEXT NOT NULL, PRIMARY KEY(vehicle_id,session_id));
     CREATE TABLE IF NOT EXISTS neuro_diagnosis_acknowledgements(vehicle_id TEXT NOT NULL, session_id TEXT NOT NULL, result_hash TEXT NOT NULL, acknowledged_at TEXT NOT NULL, PRIMARY KEY(vehicle_id,session_id));
     CREATE TABLE IF NOT EXISTS neuro_ticket_previews(token TEXT PRIMARY KEY, vehicle_id TEXT NOT NULL, session_id TEXT NOT NULL, snapshot TEXT NOT NULL, expires_at TEXT NOT NULL);`);
@@ -98,11 +99,16 @@ export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRe
   const assess = (vehicle, diagnosis) => {
     const result = publicDiagnosis(diagnosis, vehicle, acknowledged(vehicle.vehicle_id, diagnosis.session_id, diagnosis));
     if (result.guidance.canCreateTicket) {
-      result.guidance.recommendations = getRecommendations(vehicle, diagnosis);
+      result.guidance.recommendations = getRecommendations(vehicle, diagnosis).map(item => ({ ...item, operationKind: isRepairOperation(item) ? "repair" : "inspection" }));
       if (!result.guidance.recommendations.length) {
         result.guidance.message = "Отклонение акустически подтверждено, но руководство не содержит проверенной операции с цитируемой страницей для этого двигателя и кода. Передайте двигатель на дефектовку механику; заявка ТОиР без источника не создана.";
         result.guidance.canCreateTicket = false;
         result.guidance.ticketBlockReason = "manual_evidence_required";
+      } else if (!result.guidance.recommendations.some(isRepairOperation)) {
+        result.guidance.message += " Проверки выполняйте на месте; рекомендация не подтверждена как операция ремонта для заявки ТОиР.";
+        result.guidance.canCreateTicket = false;
+        result.guidance.ticketBlockReason = "repair_operation_required";
+        result.guidance.nextAction = "perform_check_on_vehicle";
       }
     }
     return result;
@@ -135,6 +141,40 @@ export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRe
       attention: rows.filter((row) => row.status === "attention").length,
       quarantine: rows.filter((row) => row.status === "quarantine").length };
     res.set("Cache-Control", "no-store").json({ summary, priorityVehicles });
+  });
+
+  const conversationRoute = "/api/neuro/vehicles/:vehicleId/sessions/:sessionId/conversation";
+  app.all(conversationRoute, (req, res, next) => {
+    if (!req.user?.id) return res.status(401).json({ error: "authentication_required" });
+    const { vehicleId, sessionId } = req.params;
+    if (!vehicles.get(vehicleId)?.sessions.some(item => item.session_id === sessionId)) {
+      return res.status(404).json({ error: "vehicle_or_session_not_found" });
+    }
+    res.set("Cache-Control", "no-store");
+    next();
+  });
+  app.get(conversationRoute, (req, res) => {
+    const exchanges = db.prepare("SELECT id, session AS sessionId, question, answer, evidence FROM neuro_conversation WHERE owner=? AND vehicle=? ORDER BY rowid DESC LIMIT 50")
+      .all(req.user.id, req.params.vehicleId).reverse().map(row => ({ ...row, evidence: JSON.parse(row.evidence) }));
+    res.json({ exchanges });
+  });
+  app.post(conversationRoute, (req, res) => {
+    const { id, question, answer, evidence } = req.body || {};
+    if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id) || !validText(question, 1000) || !validText(answer, 24000) ||
+        !Array.isArray(evidence) || evidence.length > 16 || !evidence.every(item => item && validText(item.manual, 500) &&
+          validText(item.text, 6000) && Number.isSafeInteger(item.pdfPage) && item.pdfPage > 0 &&
+          typeof item.url === "string" && /^\/api\/manuals\/[a-zA-Z0-9_%-]+\.pdf#page=\d+$/.test(item.url) && item.url.endsWith("#page=" + item.pdfPage))) {
+      return res.status(400).json({ error: "invalid_exchange" });
+    }
+    const sources = JSON.stringify(evidence.map(({ manual, text, pdfPage, url }) => ({ manual, text, pdfPage, url })));
+    const key = [req.user.id, req.params.vehicleId, req.params.sessionId, id];
+    const inserted = db.prepare("INSERT INTO neuro_conversation(owner,vehicle,session,id,question,answer,evidence) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING")
+      .run(...key, question, answer, sources);
+    if (!inserted.changes) {
+      const old = db.prepare("SELECT question,answer,evidence FROM neuro_conversation WHERE owner=? AND vehicle=? AND session=? AND id=?").get(...key);
+      if (old.question !== question || old.answer !== answer || old.evidence !== sources) return res.status(409).json({ error: "exchange_conflict" });
+    }
+    res.status(inserted.changes ? 201 : 200).json({ id });
   });
 
   app.get("/api/neuro/history", (req, res) => {
@@ -206,6 +246,8 @@ export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRe
     const recommendations = assessment.guidance.recommendations;
     if (!operations.every((operation) => recommendations.some((recommendation) => recommendation.text === operation))) return res.status(422).json({ error: "operation_not_manual_supported" });
     if (operations.length > recommendations.length) return res.status(422).json({ error: "duplicate_operation" });
+    const selected = operations.map((operation) => recommendations.find((recommendation) => recommendation.text === operation));
+    if (!selected.every(isRepairOperation)) return res.status(422).json({ error: "operation_not_repair" });
     const references = [];
     for (const { manual, pdfPage, text } of recommendations) {
       if (operations.includes(text) && !references.some(ref => ref.manual === manual && ref.pdf_page === pdfPage)) {
@@ -247,6 +289,12 @@ export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRe
     }
     const currentDiagnosis = db.prepare("SELECT revision FROM neuro_diagnoses WHERE vehicle_id=? AND session_id=?").get(vehicleId, sessionId);
     if (!currentDiagnosis || currentDiagnosis.revision !== diagnosisRevision) return res.status(409).json({ error: "diagnosis_changed_since_preview" });
+    const vehicle = vehicles.get(vehicleId);
+    const current = vehicle && assess(vehicle, JSON.parse(db.prepare("SELECT result FROM neuro_diagnoses WHERE vehicle_id=? AND session_id=?").get(vehicleId, sessionId).result));
+    const repairOperations = current?.guidance.recommendations?.filter(isRepairOperation) || [];
+    if (!current?.guidance.canCreateTicket || !Array.isArray(payload.operations) || !payload.operations.length || !payload.operations.every((operation) => repairOperations.some((recommendation) => recommendation.text === operation))) {
+      return res.status(409).json({ error: "repair_operation_required" });
+    }
     const insert = db.prepare("INSERT INTO neuro_tickets(vehicle_id,session_id,state,result,updated_at) VALUES(?,?,'pending',NULL,?) ON CONFLICT(vehicle_id,session_id) DO UPDATE SET state='pending',result=NULL,updated_at=excluded.updated_at WHERE neuro_tickets.state='failed'");
     const reserved = insert.run(vehicleId, sessionId, new Date().toISOString());
     if (!reserved.changes) {

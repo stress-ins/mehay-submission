@@ -10,7 +10,7 @@ import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { searchManuals, manualById, getManuals, manualDirectory, isValveTimingQuestion } from "./manuals.mjs";
 import { fleet as diagnosticFleet, repairExperience, seedRepairHistory } from "./repair-experience.mjs";
-import { answerFromManuals, manualLanguages, translateManualText } from "./manual-answer.mjs";
+import { answerFromManuals, isYamzMainBearingTorqueQuestion, manualLanguages, translateManualText, yamzMainBearingTorqueAssessment } from "./manual-answer.mjs";
 import { mountNeuroDvs, publicDiagnosis, vehicleMeasurementPriority } from "./neurodvs.mjs";
 import { createManualPageRenderer, ManualPageError } from "./manual-page-renderer.mjs";
 import { buildAssistantEvidence, classifySearchOrigin, findRecordMarkers, hasTorqueRecommendation, isTorqueQuery, resolveAssistantCitations, sanitizePriorEvidenceMarkers, scopedWebSearchQuery, searchCitationMatchesScope } from "./assistant-evidence.mjs";
@@ -738,6 +738,10 @@ export function createApp({
     CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
     CREATE TABLE IF NOT EXISTS admin_audit(id TEXT PRIMARY KEY, actor_user_id TEXT NOT NULL, target_user_id TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS qa_observations(id TEXT PRIMARY KEY, created_at TEXT NOT NULL, user_id TEXT NOT NULL, vehicle_id TEXT, vehicle_model TEXT, engine TEXT, session_id TEXT, surface TEXT NOT NULL, request_text TEXT NOT NULL, route_decision TEXT, action TEXT NOT NULL, tool TEXT, source_refs TEXT NOT NULL, outcome TEXT NOT NULL, error_code TEXT, duration_ms INTEGER NOT NULL, issue_id TEXT);
+    CREATE INDEX IF NOT EXISTS qa_observations_created_idx ON qa_observations(created_at DESC);
+    CREATE TABLE IF NOT EXISTS qa_review_cases(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, status TEXT NOT NULL CHECK(status IN ('open','reviewed')), first_seen TEXT NOT NULL, updated_at TEXT NOT NULL, last_observation_id TEXT NOT NULL REFERENCES qa_observations(id), category TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS qa_review_cases_status_idx ON qa_review_cases(status,updated_at DESC);
     CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);`);
   function insertDiagnosticVehicles() {
     const insert = db.prepare("INSERT INTO vehicles(id,data) VALUES (?,?) ON CONFLICT(id) DO NOTHING");
@@ -1226,6 +1230,48 @@ export function createApp({
     req.user = user;
     next();
   });
+  app.use("/api", (req, res, next) => {
+    const surfaces = { "/manuals/search": "manual_search", "/assistant": "assistant", "/neuro/tool-route": "tool_route" };
+    const surface = surfaces[req.path];
+    if (!surface || req.method !== "POST") return next();
+    const started = Date.now();
+    let payload;
+    const json = res.json.bind(res);
+    res.json = (value) => { payload = value; return json(value); };
+    res.once("finish", () => {
+      const body = req.body || {};
+      const user = req.user;
+      if (!user || !payload) return;
+      const vehicle = typeof body.vehicleId === "string" ? getVehicle(body.vehicleId) : null;
+      const sourceRefs = (Array.isArray(payload.results) ? payload.results.map((item) => ({ manual: item.manual?.title || item.manual?.id || "Руководство", page: item.pdfPage })) : [])
+        .concat(Array.isArray(payload.sources) ? payload.sources.filter((source) => source.type === "manual" || source.manual).map((source) => ({ manual: source.title || source.manual || "Руководство", page: source.pdfPage })) : [])
+        .filter((source) => Number.isInteger(source.page) && source.page > 0).slice(0, 12);
+      const requestText = String(body.query ?? body.message ?? "").trim().slice(0, 3000);
+      const errorCode = req.qaRouteError || (res.statusCode >= 400 && typeof payload.error === "string" ? payload.error.slice(0, 80) : null);
+      const category = errorCode ? "error" : payload.manualAssessment === "conflict" ? "conflict" : payload.answerUnavailable || (surface === "manual_search" && sourceRefs.length === 0) || (surface === "assistant" && payload.evidence?.technicalCards?.some((card) => card.status === "needs_verification")) ? "no_evidence" : null;
+      const outcome = category || (surface === "tool_route" ? "routed" : "answered");
+      const id = randomUUID(), createdAt = new Date().toISOString();
+      const fingerprint = category ? createHash("sha256").update(JSON.stringify([user.id, body.vehicleId || "", body.sessionId || "", surface, requestText.toLocaleLowerCase("ru").replace(/\\s+/g, " "), category])).digest("hex") : null;
+      try {
+        db.prepare("INSERT INTO qa_observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
+          id, createdAt, user.id, vehicle?.id || (typeof body.vehicleId === "string" ? body.vehicleId.slice(0, 64) : null), vehicle?.model?.slice(0, 160) || null,
+          (body.engineModel || vehicle?.engine || "").toString().slice(0, 100) || null, typeof body.sessionId === "string" ? body.sessionId.slice(0, 80) : null,
+          surface, requestText, req.qaRouteDecision || (surface === "manual_search" ? "manual_search" : surface === "assistant" ? "assistant_response" : null),
+          surface === "manual_search" ? "retrieve_manual_pages" : surface === "assistant" ? "answer_question" : "select_workshop_tool",
+          payload.tool || req.qaRouteDecision || null, JSON.stringify(sourceRefs), outcome, errorCode, Date.now() - started, null,
+        );
+        if (fingerprint) {
+          const caseId = randomUUID();
+          db.prepare(`INSERT INTO qa_review_cases(id,fingerprint,status,first_seen,updated_at,last_observation_id,category) VALUES (?,?,'open',?,?,?,?)
+            ON CONFLICT(fingerprint) DO UPDATE SET status='open',updated_at=excluded.updated_at,last_observation_id=excluded.last_observation_id,category=excluded.category`)
+            .run(caseId, fingerprint, createdAt, createdAt, id, category);
+          const review = db.prepare("SELECT id FROM qa_review_cases WHERE fingerprint=?").get(fingerprint);
+          db.prepare("UPDATE qa_observations SET issue_id=? WHERE id=?").run(review.id, id);
+        }
+      } catch { /* Observability must not change the Q&A response. */ }
+    });
+    next();
+  });
   mountNeuroDvs(app, { db, manualSearch });
   const renderManualPage = createManualPageRenderer({
     manualById,
@@ -1301,6 +1347,28 @@ export function createApp({
     req.user = user;
     return true;
   };
+  app.get("/api/admin/qa-review", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    if (!recheckAdmin(req, res)) return;
+    const cases = db.prepare("SELECT id,status,first_seen,updated_at,category,last_observation_id FROM qa_review_cases ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END,updated_at DESC LIMIT 100").all();
+    const oneObservation = db.prepare("SELECT * FROM qa_observations WHERE id=?");
+    const relatedObservations = db.prepare("SELECT id,created_at,user_id,vehicle_id,vehicle_model,engine,session_id,surface,request_text,route_decision,action,tool,source_refs,outcome,error_code,duration_ms FROM qa_observations WHERE user_id=? AND vehicle_id IS ? AND session_id IS ? AND created_at>=? AND created_at<=? ORDER BY created_at,id LIMIT 40");
+    return res.json({ cases: cases.map((item) => {
+      const last = oneObservation.get(item.last_observation_id);
+      const lower = new Date(Date.parse(item.updated_at) - 15 * 60_000).toISOString();
+      const upper = new Date(Date.parse(item.updated_at) + 15 * 60_000).toISOString();
+      const events = last ? relatedObservations.all(last.user_id, last.vehicle_id, last.session_id, lower, upper) : [];
+      return { ...item, events: events.map((event) => ({ ...event, source_refs: JSON.parse(event.source_refs) })) };
+    }) });
+  });
+  app.post("/api/admin/qa-review/:id/review", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    if (!recheckAdmin(req, res)) return;
+    if (Object.keys(req.body || {}).length) return fail(res, 400, "invalid_review_update");
+    const result = db.prepare("UPDATE qa_review_cases SET status='reviewed',updated_at=? WHERE id=?").run(new Date().toISOString(), req.params.id);
+    if (!result.changes) return fail(res, 404, "review_case_not_found");
+    return res.json({ id: req.params.id, status: "reviewed" });
+  });
   const exactKeys = (value, allowed) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((key) => allowed.includes(key));
   const userResponse = (row) => publicUser(row);
   app.get("/api/admin/users", (req, res) => {
@@ -2029,6 +2097,12 @@ export function createApp({
     const manualChunks = supportedEngines.has(normalizedEngine) ? await manualSearch({ engineModel, query: b.message, limit: 5 }) : [];
     const key = process.env.OPENROUTER_API_KEY,
       model = process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini";
+    if (manualEngineMatchesVehicle && isYamzMainBearingTorqueQuestion(engineModel, b.message)) {
+      const assessment = yamzMainBearingTorqueAssessment(manualChunks, b.language || "ru");
+      if (assessment) return res.json({ answer: assessment.answer, manualAssessment: assessment.manualAssessment, model, evidence,
+        sources: assessment.results.map((chunk, i) => ({ id: `manual-${i + 1}`, title: chunk.manual.title, type: "manual", manual: chunk.manual.title,
+          pdfPage: chunk.pdfPage, url: `/api/manuals/${encodeURIComponent(chunk.manual.id)}.pdf#page=${chunk.pdfPage}`, description: chunk.text.slice(0, 1000), tags: [] })) });
+    }
     if (isTorqueQuery(b.message)) {
       const card = evidence.technicalCards[0];
       return res.json({ answer: `Для ${card.appliesTo} подтверждённого момента затяжки нет. Нужны узел и крепёж, точная модификация и подходящая сервисная документация.`, sources: [], model, evidence });

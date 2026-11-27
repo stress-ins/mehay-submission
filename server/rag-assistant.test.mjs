@@ -59,6 +59,32 @@ test("manual retrieval is keyless, engine-scoped, cited by PDF page, and protect
   assert.equal(pdf.status, 404, "a synthetic citation cannot access an unconfigured knowledge base");
 });
 
+test("admin review queue records unresolved manual requests once without storing answers or source text", async (t) => {
+  const { raw, request } = await fixture(t, async () => []);
+  const body = { engineModel: "ЯМЗ-536", query: "Нужна процедура для конкретного узла", answer: true, vehicleId: "van-4", sessionId: "session-77" };
+  for (let index = 0; index < 2; index += 1) {
+    const response = await request("/api/manuals/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).results, []);
+  }
+  assert.equal((await raw("/api/admin/qa-review")).status, 401);
+  const queue = await (await request("/api/admin/qa-review")).json();
+  assert.equal(queue.cases.length, 1, "repeat requests should update one internal case");
+  assert.equal(queue.cases[0].category, "no_evidence");
+  assert.equal(queue.cases[0].events.length, 2, "both workflow attempts remain observable");
+  const event = queue.cases[0].events[1];
+  assert.equal(event.vehicle_id, "van-4");
+  assert.equal(event.session_id, "session-77");
+  assert.equal(event.request_text, body.query);
+  assert.equal(event.action, "retrieve_manual_pages");
+  assert.deepEqual(event.source_refs, []);
+  assert.equal("answer" in event, false);
+  assert.equal("provider_secret" in event, false);
+  const reviewed = await request(`/api/admin/qa-review/${queue.cases[0].id}/review`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  assert.equal(reviewed.status, 200);
+  assert.equal((await reviewed.json()).status, "reviewed");
+});
+
 test("assistant uses local pages and keeps fleet context out of web lookup", async (t) => {
   const oldKey = process.env.OPENROUTER_API_KEY, oldFetch = globalThis.fetch;
   process.env.OPENROUTER_API_KEY = "test-key";

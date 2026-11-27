@@ -9,8 +9,8 @@ const tools = Object.entries(descriptions).map(([name, description]) => ({
   type: "function", function: { name, description, parameters: { type: "object", properties: {}, additionalProperties: false } },
 }));
 
-export async function chooseNeuroTool({ query, hasDiagnosis, canCreateTicket }, { apiKey = process.env.OPENROUTER_API_KEY, fetchImpl = fetch } = {}) {
-  if (!apiKey) return "fallback";
+export async function chooseNeuroToolDecision({ query, hasDiagnosis, canCreateTicket }, { apiKey = process.env.OPENROUTER_API_KEY, fetchImpl = fetch } = {}) {
+  if (!apiKey) return { tool: "fallback", errorCode: "provider_unavailable" };
   const available = tools.filter(t => t.function.name !== "ticket" || (hasDiagnosis && canCreateTicket));
   try {
     const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
@@ -24,14 +24,20 @@ export async function chooseNeuroTool({ query, hasDiagnosis, canCreateTicket }, 
         ],
       }),
     });
-    if (!response.ok) return "fallback";
+    if (!response.ok) return { tool: "fallback", errorCode: "provider_error" };
     const calls = (await response.json()).choices?.[0]?.message?.tool_calls;
-    if (!Array.isArray(calls) || calls.length !== 1) return "fallback";
+    if (!Array.isArray(calls) || calls.length !== 1) return { tool: "fallback", errorCode: "invalid_provider_response" };
     const name = calls[0]?.function?.name;
-    return available.some(t => t.function.name === name) ? name : "fallback";
+    return available.some(t => t.function.name === name)
+      ? { tool: name, errorCode: null }
+      : { tool: "fallback", errorCode: "invalid_provider_response" };
   } catch {
-    return "fallback";
+    return { tool: "fallback", errorCode: "provider_error" };
   }
+}
+
+export async function chooseNeuroTool(args, options) {
+  return (await chooseNeuroToolDecision(args, options)).tool;
 }
 
 export function mountNeuroToolRouter(app) {
@@ -40,6 +46,9 @@ export function mountNeuroToolRouter(app) {
     if (typeof query !== "string" || !query.trim() || query.length > 1500 || typeof hasDiagnosis !== "boolean" || typeof canCreateTicket !== "boolean") {
       return res.status(400).json({ error: "invalid_tool_request" });
     }
-    res.set("Cache-Control", "no-store").json({ tool: await chooseNeuroTool({ query: query.trim(), hasDiagnosis, canCreateTicket }) });
+    const decision = await chooseNeuroToolDecision({ query: query.trim(), hasDiagnosis, canCreateTicket });
+    req.qaRouteDecision = decision.tool;
+    req.qaRouteError = decision.errorCode;
+    res.set("Cache-Control", "no-store").json({ tool: decision.tool });
   });
 }

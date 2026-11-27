@@ -52,7 +52,7 @@ export function createGuidanceRepository(records, { manuals, getManualById, getP
   }
   function evidence(item) {
     const manual = getManualById(item.manualId);
-    return { ...(item.stepKey ? { stepKey: item.stepKey } : {}), text: item.text, ...(item.translations ? { translations: item.translations } : {}),
+    return { ...(item.stepKey ? { stepKey: item.stepKey } : {}), ...(item.operationKind ? { operationKind: item.operationKind } : {}), text: item.text, ...(item.translations ? { translations: item.translations } : {}),
       manual: manual.title, pdfPage: item.pdfPage, url: `/api/manuals/${encodeURIComponent(item.manualId)}.pdf#page=${item.pdfPage}`, excerpt: item.quote };
   }
   const mergedRecords = records.map((item) => {
@@ -86,3 +86,4 @@ const verifiedGuidance = manuals.length ? readGuidance(knowledgeDirectory) : [];
 const repository = createGuidanceRepository(verifiedGuidance, { manuals, getManualById: manualById, getPageText: manualPageText });
 export { verifiedGuidance };
 export const recommendationsFor = repository.recommendationsFor;
+export const isRepairOperation = (item) => item?.operationKind === "repair" || (item?.operationKind == null && item?.stepKey === "adjust");

@@ -1,11 +1,44 @@
 import { isValveTimingQuestion } from "./manuals.mjs";
 import { valveTimingAssessment } from "./manual-valve-timing.mjs";
 
+export function isYamzMainBearingTorqueQuestion(engineModel, query) {
+  const engine = (engineModel || "").toLocaleLowerCase("ru").replaceAll("ё", "е").replace(/[^a-zа-я0-9]/giu, "");
+  return /^(?:ямз|yamz)236(?:м|m)2$/iu.test(engine)
+    && /коренн.{0,40}(?:подшипник|опор)|(?:подшипник|опор).{0,40}коренн/iu.test(query)
+    && /момент|затяж|болт|креплен/iu.test(query);
+}
+
+export function yamzMainBearingTorqueAssessment(pages, language = "ru") {
+  const relevant = pages.filter(({ manual, text }) => {
+    const searchable = text.replace(/[-‐‑]\s*\n\s*/gu, "").replace(/\s+/gu, " ");
+    return manual?.id === "yamz-236-repair"
+      && /крыш.{0,60}коренн.{0,60}подшипник|коренн.{0,60}подшипник.{0,60}крыш/iu.test(searchable)
+      && /болт|стяжн/iu.test(searchable)
+      && /н\s*[·⋅.]\s*м|нм/iu.test(searchable);
+  });
+  if (!relevant.length) return null;
+  const orientation = relevant.some(({ text }) => /вертикальн/iu.test(text) && /горизонтальн/iu.test(text));
+  if (!orientation) return null;
+  const intro = {
+    ru: "В руководстве есть разные указания для крышек коренных подшипников: условия на страницах ниже различаются. На странице с таблицей крепёж разделён на вертикальные и горизонтальные болты. Не выбирайте значение, пока не установлены ориентация болта и операция (измерение или сборка); перед затяжкой сверьте применимую процедуру со старшим механиком.",
+    en: "The manual gives different instructions for the main bearing caps under the conditions shown below. Its table separates vertical and horizontal bolts. Identify bolt orientation and operation (measurement or assembly) before choosing a value; have the applicable procedure verified before tightening.",
+    hi: "मुख्य बेयरिंग कैप के लिए पुस्तिका में नीचे दी गई अलग-अलग परिस्थितियों के निर्देश हैं। तालिका ऊर्ध्वाधर और क्षैतिज बोल्ट अलग करती है। मान चुनने से पहले बोल्ट की दिशा और काम (माप या असेंबली) पहचानें; कसने से पहले लागू प्रक्रिया सत्यापित कराएँ।",
+    tg: "Дар дастур барои сарпӯшҳои подшипникҳои асосӣ шартҳои гуногун оварда шудаанд. Ҷадвал болтҳои амудӣ ва уфуқиро ҷудо мекунад. Пеш аз интихоби қимат самти болт ва амалиётро (ченкунӣ ё васлкунӣ) муайян карда, тартиби дахлдорро тасдиқ кунед.",
+    uz: "Asosiy podshipnik qopqoqlari uchun qo‘llanmada quyida turli shartlar berilgan. Jadval vertikal va gorizontal boltlarni ajratadi. Qiymatni tanlashdan oldin bolt yo‘nalishi va ish turini (o‘lchash yoki yig‘ish) aniqlang va tegishli tartibni tasdiqlating.",
+  }[language] || "В руководстве приведены разные условия. Определите ориентацию болта и операцию, затем подтвердите применимый порядок до затяжки.";
+  const citations = relevant.map(({ manual, pdfPage, text }) => `${manual.title} · PDF ${pdfPage}: «${text.replace(/\s+/gu, " ").trim()}»`);
+  return { manualAssessment: "conflict", answer: [intro, ...citations].join("\n\n"), results: relevant };
+}
+
 // The model selects source lines. All displayed words and numbers come from the indexed PDF.
 export async function answerFromManuals({ pages, engineModel, fault, query, previousQuestion = "", retrievalQuery = [query, previousQuestion].filter(Boolean).join(" "), language = "ru", fetchImpl = fetch }) {
   // A repair excerpt alone cannot establish roadworthiness for this vehicle.
   if (/(?:своим ходом|перег(?:нать|он)|можно ли (?:ехать|доехать)|продолж(?:ить|ать) движение)/iu.test(query)) return { results: [] };
   if (isValveTimingQuestion(engineModel, retrievalQuery)) return valveTimingAssessment(pages, language);
+  if (isYamzMainBearingTorqueQuestion(engineModel, retrievalQuery)) {
+    const assessment = yamzMainBearingTorqueAssessment(pages, language);
+    if (assessment) return assessment;
+  }
   if (!pages.length) return { results: [] };
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return { results: [], answerUnavailable: true };

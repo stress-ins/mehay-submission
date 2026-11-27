@@ -56,9 +56,9 @@ export default function KnowledgeLibrary({ api, appPath, engines }: Props) {
       {error && <p role="alert">{error}</p>}
       {answer && <div className="library-answer" role="status">
         {assessment === "conflict" && <strong><AlertTriangle size={18} aria-hidden="true"/> Требуется сверка руководств</strong>}
-        <p>{assessment ? answer.split("\n\n")[0] : answer}</p>
+        <p>{assessment === "conflict" ? answer : assessment ? answer.split("\n\n")[0] : answer}</p>
       </div>}
-      {results && <section aria-label="Результаты поиска"><h2>Найденные страницы · {results.length}</h2>{!results.length && <p>Подтверждения в руководствах не найдено.</p>}
+      {results && <section aria-label="Результаты поиска"><h2>Найденные страницы · {results.length}</h2>{!results.length && <p>Подтверждения в руководствах не найдено. Проверьте модификацию двигателя и укажите узел или название операции из руководства изготовителя.</p>}
         {results.map(r => <details key={r.url}><summary>{r.manual.title} · стр. {r.pdfPage}</summary><p>{r.text}</p><a href={appPath(r.url)} target="_blank" rel="noreferrer">Открыть страницу PDF</a></details>)}</section>}
       <h2>Руководства{filtered && ' · ' + filtered.length}</h2>
       {manuals === null && !error && <p role="status">Загружаем перечень…</p>}

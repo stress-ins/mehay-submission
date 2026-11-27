@@ -6,12 +6,12 @@ import { translateNeuroDvs as t } from "./neuroDvsTranslations";
 import "./NeuroWorkflow.css";
 
 export type ManualEvidenceItem = { text: string; sourceText?: string; language?: MechanicPlanLanguage; originalLanguage?: boolean; translations?: Partial<Record<Exclude<MechanicPlanLanguage, "ru">, string>>; title?: string; manual: string; pdfPage: number; url: string };
-export type NeuroChatTurn = { role: "mechanic" | "assistant"; text: string; evidence: ManualEvidenceItem[] };
+export type NeuroChatTurn = { sessionId?: string; role: "mechanic" | "assistant"; text: string; evidence: ManualEvidenceItem[] };
 
 export function NeuroChatHistory({ turns, appPath }: { turns: NeuroChatTurn[]; appPath: (path: string) => string }) {
   const language = useSystemLanguage();
   if (!turns.length) return null;
-  return <div className="neuro-chat-history" aria-live="polite"><h3>{t("История разговора по этой сессии", language)}</h3>{turns.map((turn, i) => <article key={`${i}-${turn.role}`} className={`neuro-turn ${turn.role}`}><strong>{t(turn.role === "mechanic" ? "Механик" : "Ответ по источникам", language)}</strong><p>{turn.text}</p>{turn.evidence.map((item, j) => <ManualEvidence key={`${item.manual}-${item.pdfPage}-${j}`} item={item} appPath={appPath} />)}</article>)}</div>;
+  return <div className="neuro-chat-history" aria-live="polite"><h3>{t("История вопросов по машине", language)}</h3>{turns.map((turn, i) => <article key={`${i}-${turn.role}`} className={`neuro-turn ${turn.role}`}><strong>{t(turn.role === "mechanic" ? "Механик" : "Ответ по источникам", language)}</strong>{turn.sessionId && turn.role === "mechanic" && <small> · {turn.sessionId}</small>}<p>{turn.text}</p>{turn.evidence.map((item, j) => <ManualEvidence key={`${item.manual}-${item.pdfPage}-${j}`} item={item} appPath={appPath} />)}</article>)}</div>;
 }
 
 function pageImageUrl(pdfUrl: string): string | null {

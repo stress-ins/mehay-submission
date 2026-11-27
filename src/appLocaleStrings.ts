@@ -3789,6 +3789,13 @@ export const appLocaleStrings: Record<string, Record<AppLocaleCode, string>> = {
   "Метки не совпали.": { en: "The marks do not match.", hi: "निशान मेल नहीं खाते।", tg: "Нишонаҳо мувофиқат намекунанд.", uz: "Belgilar mos kelmadi." },
   "Результат сохранён. Подготовлен отдельный предварительный просмотр подтверждённой регулировки.": { en: "The result is saved. A separate preview for the confirmed adjustment is ready.", hi: "परिणाम सहेज लिया गया है। पुष्ट समायोजन के लिए अलग पूर्वावलोकन तैयार है।", tg: "Натиҷа сабт шуд. Пешнамоиши алоҳидаи танзими тасдиқшуда омода аст.", uz: "Natija saqlandi. Tasdiqlangan sozlash uchun alohida ko‘rib chiqish tayyor." },
   "Метки совпадают": { en: "Marks match", hi: "निशान मेल खाते हैं", tg: "Нишонаҳо мувофиқат мекунанд", uz: "Belgilar mos" },
-  "Метки не совпадают": { en: "Marks do not match", hi: "निशान मेल नहीं खाते", tg: "Нишонаҳо мувофиқат намекунанд", uz: "Belgilar mos emas" }
+  "Метки не совпадают": { en: "Marks do not match", hi: "निशान मेल नहीं खाते", tg: "Нишонаҳо мувофиқат намекунанд", uz: "Belgilar mos emas" },
+  "Общий вопрос": { en: "General question", hi: "सामान्य प्रश्न", tg: "Саволи умумӣ", uz: "Umumiy savol" },
+  "Ширина чата": { en: "Chat width", hi: "चैट की चौड़ाई", tg: "Паҳнои чат", uz: "Chat kengligi" },
+  "Задайте общий вопрос": { en: "Ask a general question", hi: "सामान्य प्रश्न पूछें", tg: "Саволи умумӣ диҳед", uz: "Umumiy savol bering" },
+  "Можно задать вопрос по работе сервиса, диагностике или ремонту.": { en: "Ask about using the service, diagnostics, or repairs.", hi: "सेवा के उपयोग, निदान या मरम्मत के बारे में पूछें।", tg: "Дар бораи истифодаи хизматрасонӣ, ташхис ё таъмир савол диҳед.", uz: "Xizmatdan foydalanish, diagnostika yoki taʼmirlash haqida so‘rang." },
+  "Ваш вопрос": { en: "Your question", hi: "आपका प्रश्न", tg: "Саволи шумо", uz: "Savolingiz" },
+  "Опишите наблюдение или задайте вопрос": { en: "Describe what you observed or ask a question", hi: "अपना अवलोकन बताएँ या प्रश्न पूछें", tg: "Мушоҳидаи худро нависед ё савол диҳед", uz: "Kuzatuvingizni yozing yoki savol bering" },
+  "Общий вопрос; данные машины и черновик не добавляются.": { en: "General question; vehicle data and draft are not included.", hi: "सामान्य प्रश्न; वाहन का डेटा और ड्राफ़्ट शामिल नहीं होंगे।", tg: "Саволи умумӣ; маълумоти мошин ва лоиҳа илова намешаванд.", uz: "Umumiy savol; avtomobil maʼlumotlari va qoralama qo‘shilmaydi." }
 };
 export default appLocaleStrings;

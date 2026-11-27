@@ -100,6 +100,13 @@ def validate_prepared_knowledge(root):
                 or not isinstance(item.get("text"), str) or not item["text"].strip()
                 or not isinstance(quote, str) or not quote.strip()
                 or engine.lower() not in [key.lower() for key in manual["engineKeys"]]
+                or (item.get("sourceSha256") is not None and item.get("sourceSha256") != manual["sha256"])
+                or (item.get("complaintTerms") is not None and (not isinstance(item["complaintTerms"], list)
+                    or not item["complaintTerms"] or any(not isinstance(term, str) or not term.strip() for term in item["complaintTerms"])))
+                or (item.get("supersedes") is not None and (not isinstance(item["supersedes"], list) or any(
+                    not isinstance(entry, dict) or not isinstance(entry.get("manualId"), str)
+                    or isinstance(entry.get("pdfPage"), bool) or not isinstance(entry.get("pdfPage"), int) or entry["pdfPage"] < 1
+                    for entry in item["supersedes"])))
                 or not isinstance(page, str)
                 or " ".join(quote.lower().split()) not in " ".join(page.lower().split())):
             raise FetchError("invalid prepared guidance")

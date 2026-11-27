@@ -27,7 +27,7 @@ export type NeuroPriorityVehicle = {
   confidence?: number | null;
   signal_quality?: string | null;
 };
-export type StoredHistory = { diagnoses: { session_id: string; created_at: string; status: string; anomaly_type?: string; anomaly_title?: string; confidence?: number; anomaly_score?: number }[]; tickets: { ticket_id: string; session_id: string; created_at: string; anomaly_type?: string; urgency: string }[] };
+export type StoredHistory = { diagnoses: { session_id: string; created_at: string; status: string; timingMarks?: "matched" | "mismatched"; anomaly_type?: string; anomaly_title?: string; confidence?: number; anomaly_score?: number }[]; tickets: { ticket_id: string; session_id: string; created_at: string; anomaly_type?: string; urgency: string }[] };
 type Props = {
   selectedVehicleId: string;
   sessions: NeuroTrendSession[];
@@ -101,6 +101,7 @@ export default function NeuroFleetOverview({ selectedVehicleId, sessions, histor
           <strong><Activity size={18} aria-hidden="true" /> {(statusText[item.status] ? label(statusText[item.status]) : item.status)}{item.anomaly_type && ` · ${item.anomaly_type}`}{item.anomaly_title && ` · ${item.anomaly_title}`}</strong>
           <small>{dateText(item.created_at)} · {item.session_id}</small>
           <div>{typeof item.anomaly_score === "number" && <span>Оценка аномалии <b>{percent(item.anomaly_score)}</b></span>} {typeof item.confidence === "number" && <span>Уверенность <b>{percent(item.confidence)}</b></span>}</div>
+          {item.timingMarks && <p>{label(item.timingMarks === "matched" ? "Метки совпали." : "Метки не совпадают")}</p>}
           {tickets.filter((t) => t.session_id === item.session_id).map(ticketRow)}
           {!tickets.some((t) => t.session_id === item.session_id) && <p>Заявка по этому замеру пока не создана.</p>}
           {sessions.some((session) => session.session_id === item.session_id) && <button type="button" className="btn btn-outline-secondary" onClick={() => onOpen(selectedVehicleId, item.session_id)}>Открыть замер <ChevronRight size={16} /></button>}

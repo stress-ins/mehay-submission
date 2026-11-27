@@ -3721,6 +3721,9 @@ export const appLocaleStrings: Record<string, Record<AppLocaleCode, string>> = {
     "uz": "Baroi in tashxis sabtoi monandi tamir eft shushudand."
   },
   "Показать все ({0})": { en: "Show all ({0})", hi: "सभी दिखाएँ ({0})", tg: "Ҳамаро нишон диҳед ({0})", uz: "Barchasini ko‘rsatish ({0})" },
+  "Поиск по номеру, машине или заявке": { en: "Search by plate, vehicle, or request", hi: "नंबर प्लेट, वाहन या अनुरोध से खोजें", tg: "Аз рӯи рақами қайд, мошин ё дархост ҷустуҷӯ кунед", uz: "Raqam, avtomobil yoki so‘rov bo‘yicha qidiring" },
+  "Номер, модель, название или ID заявки": { en: "Plate, model, title, or request ID", hi: "नंबर प्लेट, मॉडल, शीर्षक या अनुरोध ID", tg: "Рақами қайд, модел, унвон ё ID-и дархост", uz: "Raqam, model, nom yoki so‘rov IDsi" },
+  "По запросу ничего не найдено": { en: "No matching requests found", hi: "कोई मेल खाता अनुरोध नहीं मिला", tg: "Ягон дархости мувофиқ ёфт нашуд", uz: "Mos so‘rov topilmadi" },
   "Схема автобуса": { en: "Bus diagram", hi: "बस आरेख", tg: "Нақшаи автобус", uz: "Avtobus sxemasi" },
   "Схема грузового автомобиля": { en: "Truck diagram", hi: "ट्रक आरेख", tg: "Нақшаи мошини боркаш", uz: "Yuk mashinasi sxemasi" },
   "Схема автомобиля": { en: "Vehicle diagram", hi: "वाहन आरेख", tg: "Нақшаи автомобил", uz: "Avtomobil sxemasi" },
@@ -3778,6 +3781,21 @@ export const appLocaleStrings: Record<string, Record<AppLocaleCode, string>> = {
   "не зарегистрированы": { en: "not registered", hi: "पंजीकृत नहीं", tg: "сабт нашудаанд", uz: "ro‘yxatdan o‘tmagan" },
   "Пункт {0}": { en: "Item {0}", hi: "मद {0}", tg: "Мавод {0}", uz: "Band {0}" },
   "общее": { en: "general", hi: "सामान्य", tg: "умумӣ", uz: "umumiy" },
-  "закрыта": { en: "closed", hi: "बंद", tg: "пӯшида", uz: "yopiq" }
+  "закрыта": { en: "closed", hi: "बंद", tg: "пӯшида", uz: "yopiq" },
+  "Проверка момента начала подачи топлива": { en: "Check the start of fuel delivery", hi: "ईंधन आपूर्ति शुरू होने के समय की जाँच", tg: "Санҷиши лаҳзаи оғози интиқоли сӯзишворӣ", uz: "Yoqilg‘i uzatilishi boshlanish vaqtini tekshirish" },
+  "Сверьте метки по пункту 5.12.1 руководства и сохраните результат. Для этой проверки достаточно отметить, совпали ли метки.": { en: "Compare the marks using manual section 5.12.1. Record whether they match.", hi: "मैनुअल के खंड 5.12.1 के अनुसार निशानों की तुलना करें और दर्ज करें कि वे मेल खाते हैं या नहीं।", tg: "Нишонаҳоро мувофиқи банди 5.12.1 санҷед ва мувофиқат ё номувофиқатии онҳоро сабт кунед.", uz: "Qo‘llanmaning 5.12.1-bandiga ko‘ra belgilarni solishtiring va mos kelishi yoki kelmasligini qayd eting." },
+  "Метки совпали.": { en: "The marks match.", hi: "निशान मेल खाते हैं।", tg: "Нишонаҳо мувофиқат мекунанд.", uz: "Belgilar mos keldi." },
+  "Аномалия остаётся. Проверьте другие возможные причины по руководству.": { en: "The anomaly remains. Check other possible causes in the manual.", hi: "विसंगति बनी हुई है। मैनुअल के अनुसार अन्य संभावित कारणों की जाँच करें।", tg: "Нуқсон боқӣ мемонад. Сабабҳои дигари имконпазирро тибқи дастур санҷед.", uz: "Anomaliya saqlanib qoladi. Qo‘llanma bo‘yicha boshqa ehtimoliy sabablarni tekshiring." },
+  "Метки не совпали.": { en: "The marks do not match.", hi: "निशान मेल नहीं खाते।", tg: "Нишонаҳо мувофиқат намекунанд.", uz: "Belgilar mos kelmadi." },
+  "Результат сохранён. Подготовлен отдельный предварительный просмотр подтверждённой регулировки.": { en: "The result is saved. A separate preview for the confirmed adjustment is ready.", hi: "परिणाम सहेज लिया गया है। पुष्ट समायोजन के लिए अलग पूर्वावलोकन तैयार है।", tg: "Натиҷа сабт шуд. Пешнамоиши алоҳидаи танзими тасдиқшуда омода аст.", uz: "Natija saqlandi. Tasdiqlangan sozlash uchun alohida ko‘rib chiqish tayyor." },
+  "Метки совпадают": { en: "Marks match", hi: "निशान मेल खाते हैं", tg: "Нишонаҳо мувофиқат мекунанд", uz: "Belgilar mos" },
+  "Метки не совпадают": { en: "Marks do not match", hi: "निशान मेल नहीं खाते", tg: "Нишонаҳо мувофиқат намекунанд", uz: "Belgilar mos emas" },
+  "Общий вопрос": { en: "General question", hi: "सामान्य प्रश्न", tg: "Саволи умумӣ", uz: "Umumiy savol" },
+  "Ширина чата": { en: "Chat width", hi: "चैट की चौड़ाई", tg: "Паҳнои чат", uz: "Chat kengligi" },
+  "Задайте общий вопрос": { en: "Ask a general question", hi: "सामान्य प्रश्न पूछें", tg: "Саволи умумӣ диҳед", uz: "Umumiy savol bering" },
+  "Можно задать вопрос по работе сервиса, диагностике или ремонту.": { en: "Ask about using the service, diagnostics, or repairs.", hi: "सेवा के उपयोग, निदान या मरम्मत के बारे में पूछें।", tg: "Дар бораи истифодаи хизматрасонӣ, ташхис ё таъмир савол диҳед.", uz: "Xizmatdan foydalanish, diagnostika yoki taʼmirlash haqida so‘rang." },
+  "Ваш вопрос": { en: "Your question", hi: "आपका प्रश्न", tg: "Саволи шумо", uz: "Savolingiz" },
+  "Опишите наблюдение или задайте вопрос": { en: "Describe what you observed or ask a question", hi: "अपना अवलोकन बताएँ या प्रश्न पूछें", tg: "Мушоҳидаи худро нависед ё савол диҳед", uz: "Kuzatuvingizni yozing yoki savol bering" },
+  "Общий вопрос; данные машины и черновик не добавляются.": { en: "General question; vehicle data and draft are not included.", hi: "सामान्य प्रश्न; वाहन का डेटा और ड्राफ़्ट शामिल नहीं होंगे।", tg: "Саволи умумӣ; маълумоти мошин ва лоиҳа илова намешаванд.", uz: "Umumiy savol; avtomobil maʼlumotlari va qoralama qo‘shilmaydi." }
 };
 export default appLocaleStrings;

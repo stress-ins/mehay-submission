@@ -1,12 +1,13 @@
 import SystemLanguagePicker from "./SystemLanguagePicker";
 import { getSystemLanguage, useSystemLanguage } from "./systemLanguage";
-import { translateSystemText } from "./systemTranslations";
+import { translateInterfaceText, translateNeuroReason, translateSystemText } from "./systemTranslations";
 import { plateMatches } from "./plateSearch";
+import { fleetReviewSearchMatches } from "./fleetReviewSearch";
 import "./FleetReview.css";
 import SubmittedTickets from "./SubmittedTickets";
 import KnowledgeLibrary from "./KnowledgeLibrary";
 import "./Workshop.css";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import AcousticDiagnostics from "./AcousticDiagnostics";
 import {
@@ -61,7 +62,8 @@ import { repairExample } from "./repairExample";
 import RepairExperience, { type RepairExperienceData } from "./RepairExperience";
 import PartOffers from "./PartOffers";
 import AdminQaReview from "./AdminQaReview";
-import NeuroWorkflow, { normalizeManualLineBreaks, NeuroChatHistory, type NeuroChatTurn, type ManualEvidenceItem } from "./NeuroWorkflow";
+import NeuroWorkflow, { NeuroChatHistory, type NeuroChatTurn, type ManualEvidenceItem } from "./NeuroWorkflow";
+import { normalizeManualText } from "./manualText";
 import { selectNeuroTool } from "./neuroTools";
 import NeuroFleetOverview, { MeasurementTrend, type NeuroPriorityVehicle, type StoredHistory, type NeuroTrendSession } from "./NeuroFleetOverview";
 import Plate from "./Plate";
@@ -587,6 +589,7 @@ type NeuroDiagnosis = {
   guidance: {
     status: "normal" | "anomaly" | "check_failed" | "uncertain" | "stop" | "model_conflict" | "warning_confirmation_required";
     message: string;
+    timingMarks?: { outcome: null | "matched" | "mismatched" };
     recommendations: { operationKind?: "repair" | "inspection"; procedure?: ManualEvidenceItem[]; text: string; translations?: Partial<Record<"en" | "hi" | "tg" | "uz", string>>; excerpt?: string; stepKey?: string; manual: string; pdfPage: number; url: string }[];
     canCreateTicket: boolean;
     canCreateDefectoscopyTicket?: boolean;
@@ -627,6 +630,7 @@ function DiagnosticQueue({ vehicles, requests, acoustic, onOpen, onRequest }: {
   const [measurements, setMeasurements] = useState<NeuroPriorityVehicle[]>([]);
   const [failed, setFailed] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [search, setSearch] = useState("");
   useEffect(() => {
     let active = true;
     setMeasurements([]);
@@ -648,22 +652,30 @@ function DiagnosticQueue({ vehicles, requests, acoustic, onOpen, onRequest }: {
   }).filter(({ vehicle, measure, tickets, inspection, quarantine }) => measure || quarantine || vehicle.status !== "ready" || tickets.length || inspection)
     .sort((a, b) => Number(b.quarantine) - Number(a.quarantine) || Number(Boolean(b.measure)) - Number(Boolean(a.measure)) ||
       (a.measure && b.measure ? measurements.indexOf(a.measure) - measurements.indexOf(b.measure) : 0) || vehicleRank(a.vehicle.status) - vehicleRank(b.vehicle.status));
+  const query = search.trim();
+  const filteredQueue = queue.filter(({ vehicle, tickets }) => fleetReviewSearchMatches(vehicle, tickets, query));
+  const language = getSystemLanguage();
   return <section className="panel fleet-review" aria-labelledby="fleet-review-title">
-    <h2 id="fleet-review-title">Очередь внимания <span>({queue.length})</span></h2>
-    {failed && <p role="status">Свежую сводку замеров загрузить не удалось. Ниже показаны сохранённые данные парка.</p>}
-    {!queue.length && <p>Все проверки завершены.</p>}
-    <ul className="fleet-review-list">{(showAll ? queue : queue.slice(0, 3)).map(({ vehicle, measure, tickets, inspection, quarantine }) =>
+    <h2 id="fleet-review-title">{translateSystemText("Очередь внимания", language)} <span>({queue.length})</span></h2>
+    <label className="fleet-review-search">
+      <span>{translateSystemText("Поиск по номеру, машине или заявке", language)}</span>
+      <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={translateSystemText("Номер, модель, название или ID заявки", language)} />
+    </label>
+    {failed && <p role="status">{translateSystemText("Свежую сводку замеров загрузить не удалось. Ниже показаны сохранённые данные парка.", language)}</p>}
+    {!queue.length && <p>{translateSystemText("Все проверки завершены.", language)}</p>}
+    {queue.length > 0 && !filteredQueue.length && <p role="status">{translateSystemText("По запросу ничего не найдено", language)}</p>}
+    <ul className="fleet-review-list">{(query || showAll ? filteredQueue : filteredQueue.slice(0, 3)).map(({ vehicle, measure, tickets, inspection, quarantine }) =>
       <li key={vehicle.id}>
         <div className="fleet-review-identity"><Plate value={vehicle.plate} size="compact" /><strong>{vehicle.model}</strong><VehicleStatus vehicle={vehicle} /></div>
-        {measure && <p>{measure.reason}</p>}
+        {measure && <p>{translateNeuroReason(measure.reason, getSystemLanguage())}</p>}
         <div className="fleet-review-actions">
-          {(measure || quarantine || vehicle.status === "attention") && <button type="button" onClick={() => onOpen(vehicle.id, "diagnostics", measure?.session_id)}>Открыть диагностику</button>}
-          {inspection && <button type="button" onClick={() => onOpen(vehicle.id, "inspection")}>Продолжить осмотр</button>}
-          {vehicle.status === "repair" && <button type="button" onClick={() => onOpen(vehicle.id, "planning")}>Открыть план работ</button>}
-          {tickets.map((ticket) => <button type="button" key={ticket.id} onClick={() => onRequest(ticket)}>Заявка · {ticket.title}</button>)}
+          {(measure || quarantine || vehicle.status === "attention") && <button type="button" onClick={() => onOpen(vehicle.id, "diagnostics", measure?.session_id)}>{translateSystemText("Открыть диагностику", language)}</button>}
+          {inspection && <button type="button" onClick={() => onOpen(vehicle.id, "inspection")}>{translateSystemText("Продолжить осмотр", language)}</button>}
+          {vehicle.status === "repair" && <button type="button" onClick={() => onOpen(vehicle.id, "planning")}>{translateSystemText("Открыть план работ", language)}</button>}
+          {tickets.map((ticket) => <button type="button" key={ticket.id} onClick={() => onRequest(ticket)}>{translateSystemText("Заявка ·", language)} {ticket.title} · {ticket.id}</button>)}
         </div>
       </li>)}</ul>
-    {queue.length > 3 && <button className="btn btn-outline-secondary" type="button" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? "Свернуть очередь" : `Показать все (${queue.length})`}</button>}
+    {queue.length > 3 && !query && <button className="btn btn-outline-secondary" type="button" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? translateSystemText("Свернуть очередь", language) : translateInterfaceText("Показать все ({0})", language, [queue.length])}</button>}
   </section>;
 }
 function VehicleMeasurementSummary({ vehicleId }: { vehicleId: string }) {
@@ -892,7 +904,7 @@ function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssis
   }
   function speakVoiceReply(source: string, language = voiceLanguage) {
     if (!voiceReplyPending.current) return;
-    const text = normalizeManualLineBreaks(source);
+    const text = normalizeManualText(source);
     setVoiceFeedback(text);
     voiceReplyPending.current = false;
     if (typeof window === "undefined" || !window.speechSynthesis || typeof SpeechSynthesisUtterance === "undefined") return;
@@ -1021,15 +1033,16 @@ function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssis
     finally { if (isCurrent()) setQuestionBusy(false); }
   }
   async function askManual(e: React.FormEvent) { e.preventDefault(); await askManualText(question); }
-  async function prepareTicket(purpose: "repair" | "defectoscopy" = "repair") {
+  async function prepareTicket(purpose: "repair" | "defectoscopy" = "repair", diagnosisOverride?: NeuroDiagnosis) {
     setVoiceTicketPending(null);
-    if (!diagnosis || !currentVehicle || !currentSession) return;
-    if (purpose === "repair" ? !diagnosis.guidance.canCreateTicket : !diagnosis.guidance.canCreateDefectoscopyTicket) { setError("Для выбранного типа заявки требуется подтверждённое основание из руководства."); return; }
+    const ticketDiagnosis = diagnosisOverride || diagnosis;
+    if (!ticketDiagnosis || !currentVehicle || !currentSession) return;
+    if (purpose === "repair" ? !ticketDiagnosis.guidance.canCreateTicket : !ticketDiagnosis.guidance.canCreateDefectoscopyTicket) { setError("Для выбранного типа заявки требуется подтверждённое основание из руководства."); return; }
     const run = ++diagnosisRun.current;
     const isCurrent = () => run === diagnosisRun.current && activeContext.current === contextKey;
     setBusy(true); setError("");
     try {
-      const operations = diagnosis.guidance.recommendations.filter(item => purpose === "repair" ? item.operationKind === "repair" : item.operationKind === "inspection").map((item) => item.text);
+      const operations = ticketDiagnosis.guidance.recommendations.filter(item => purpose === "repair" ? item.operationKind === "repair" : item.operationKind === "inspection").map((item) => item.text);
       const result = await api<{ previewToken: string; preview: NonNullable<typeof ticketPreview>["preview"] }>("/api/neuro/tickets/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicleId, sessionId, urgency: draftUrgency, operations, purpose, ...(purpose === "repair" && historicalPart ? { historicalPart } : {}) }) });
       if (isCurrent()) setTicketPreview(result);
     } catch (cause) { if (isCurrent()) setError(cause instanceof Error ? cause.message : "Не удалось подготовить просмотр заявки ТОиР"); }
@@ -1057,6 +1070,20 @@ function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssis
       if (!isCurrent()) return;
       setDiagnosis(result); setDraftUrgency(result.guidance.urgency || "medium"); setTicketPreview(null);
     } catch (cause) { if (isCurrent()) setError(cause instanceof Error ? cause.message : "Подтверждение качества не сохранено"); }
+    finally { if (isCurrent()) setBusy(false); }
+  }
+  async function saveTimingMarks(outcome: "matched" | "mismatched") {
+    if (!diagnosis || diagnosis.guidance.status !== "anomaly" || !currentVehicle || !currentSession) return;
+    const run = ++diagnosisRun.current;
+    const isCurrent = () => run === diagnosisRun.current && activeContext.current === contextKey;
+    setBusy(true); setError("");
+    try {
+      const result = await api<NeuroDiagnosis>("/api/neuro/diagnosis/timing-marks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicleId, sessionId, resultHash: diagnosis.resultHash, outcome }) });
+      if (!isCurrent()) return;
+      setDiagnosis(result); setDraftUrgency(result.guidance.urgency || "medium"); setTicketPreview(null);
+      setHistoryRevision(value => value + 1);
+      if (outcome === "mismatched" && result.guidance.canCreateTicket) await prepareTicket("repair", result);
+    } catch (cause) { if (isCurrent()) setError(cause instanceof Error ? cause.message : "Результат сравнения меток не сохранён"); }
     finally { if (isCurrent()) setBusy(false); }
   }
   const rawDiagnosis = diagnosis?.diagnosis || {};
@@ -1147,7 +1174,7 @@ function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssis
         <NeuroWorkflow key={contextKey} vehicle={currentVehicle?.vehicle_id || ""} engine={currentVehicle?.engine_model || ""} session={sessionId} checkedAt={currentSession?.checked_at || ""} confidence={confidence} status={displayDiagnosis} fault={String(rawDiagnosis.anomaly_title || rawDiagnosis.anomaly_type || "")} recommendations={workflowRecommendations} listening={planListening} onVoice={() => openAssistant("voice")} onRead={typeof window.speechSynthesis !== "undefined" ? () => { const current = workflowRecommendations[planStep]; if (current) { voiceReplyPending.current = true; speakVoiceReply(current.text, current.language); } } : undefined} pageRequest={pageRequest.step === planStep ? pageRequest.sequence : 0} voiceNote={stepNote} step={planStep} completed={performedSteps} onComplete={() => setPerformedSteps((items) => items.includes(planStep) ? items : [...items, planStep])} onStep={(step) => { setStepNote(""); setPlanStep(step); }} appPath={appPath} planOnly />
         {!assistantHost && repairTicketPreview}
       </div>}
-      {diagnosis && !planMode && <div className={`neuro-result neuro-result--${diagnosis.guidance.status}`} aria-live="polite"><div><div className="eyebrow">{ui("РЕЗУЛЬТАТ ДИАГНОСТИКИ")}{currentSession ? ` · ${new Date(currentSession.checked_at).toLocaleString(voiceLanguage === "tg" ? "tg-TJ" : voiceLanguage === "uz" ? "uz-UZ" : voiceLanguage === "hi" ? "hi-IN" : voiceLanguage === "en" ? "en-US" : "ru-RU")}` : ""}</div><h2 className="diagnostic-verdict"><span aria-hidden="true">{statusIcon}</span> {ui(displayDiagnosis)}</h2>{nextActionText && <p className="diagnosis-next"><strong>{ui("Следующее действие")}</strong> {ui(nextActionText)}</p>}{abstained && <p>{ui(diagnosis.guidance.status === "check_failed" ? "Данные замера не прошли проверку. Выберите другую запись; диагноз и заявка по этой сессии не формируются." : diagnosis.guidance.status === "warning_confirmation_required" ? "Заявка недоступна до явного подтверждения качества или повторного замера." : diagnosis.guidance.status === "model_conflict" ? "Не применяйте этот код к выбранной машине. Проверьте модель и запись; далее нужна дефектовка." : "Результат не даёт оснований для диагноза. Требуется проверка механика.")}</p>}{quickNavigation}<details className="diagnosis-background"><summary><CircleHelp size={17} aria-hidden="true" />{ui("Обоснование результата")}</summary><p>{ui(diagnosis.guidance.message)}</p>{diagnosis.guidance.confidence?.percent !== null && diagnosis.guidance.confidence?.percent !== undefined && diagnosis.guidance.confidence.thresholdPercent !== undefined && <p>{ui(`Уверенность {confidence} по шкале 0–100%; порог {threshold}%`).replace("{confidence}", confidence).replace("{threshold}", String(diagnosis.guidance.confidence.thresholdPercent))}</p>}{!abstained && typeof rawDiagnosis.description === "string" && <p>{rawDiagnosis.description}</p>}</details>{diagnosisDetails.length > 0 && <dl className="neuro-facts">{diagnosisDetails.map(([label, value]) => <div key={label} className={label === "Качество замера" ? `neuro-quality neuro-quality--${diagnosis.guidance.quality?.value === "good" ? "good" : diagnosis.guidance.quality?.value === "warning" ? "warning" : diagnosis.guidance.quality?.value === "bad" ? "bad" : "unknown"}` : ""}><dt>{ui(label)}</dt><dd style={label === "Риск" ? { color: riskValue === "high" ? "var(--verdict-stop, #a42b27)" : riskValue === "medium" ? "var(--verdict-warning, #805300)" : riskValue === "low" ? "var(--verdict-normal, #15633f)" : undefined, fontWeight: 700 } : undefined}>{ui(String(value))}</dd></div>)}</dl>}{diagnosis.guidance.status === "warning_confirmation_required" && <PButton type="button" variant="primary" disabled={busy} onClick={() => void acknowledgeWarning()}>{ui("Подтверждаю проверку результата")}</PButton>}</div><PTag variant={diagnosis.guidance.status === "normal" ? "success" : diagnosis.guidance.status === "anomaly" ? "warning" : "secondary"}>{ui(diagnosis.guidance.status === "check_failed" ? "Замер не подтверждён" : diagnosis.guidance.status === "uncertain" ? "Недостаточно данных" : diagnosis.guidance.status === "warning_confirmation_required" ? "Нужно подтверждение" : diagnosis.guidance.status === "normal" ? "Отклонений нет" : diagnosis.guidance.status === "model_conflict" ? "Ошибка модели" : diagnosis.guidance.status === "stop" ? "СТОП" : "Требуется внимание")}</PTag></div>}
+      {diagnosis && !planMode && <div className={`neuro-result neuro-result--${diagnosis.guidance.status}`} aria-live="polite"><div><div className="eyebrow">{ui("РЕЗУЛЬТАТ ДИАГНОСТИКИ")}{currentSession ? ` · ${new Date(currentSession.checked_at).toLocaleString(voiceLanguage === "tg" ? "tg-TJ" : voiceLanguage === "uz" ? "uz-UZ" : voiceLanguage === "hi" ? "hi-IN" : voiceLanguage === "en" ? "en-US" : "ru-RU")}` : ""}</div><h2 className="diagnostic-verdict"><span aria-hidden="true">{statusIcon}</span> {ui(displayDiagnosis)}</h2>{nextActionText && <p className="diagnosis-next"><strong>{ui("Следующее действие")}</strong> {ui(nextActionText)}</p>}{abstained && <p>{ui(diagnosis.guidance.status === "check_failed" ? "Данные замера не прошли проверку. Выберите другую запись; диагноз и заявка по этой сессии не формируются." : diagnosis.guidance.status === "warning_confirmation_required" ? "Заявка недоступна до явного подтверждения качества или повторного замера." : diagnosis.guidance.status === "model_conflict" ? "Не применяйте этот код к выбранной машине. Проверьте модель и запись; далее нужна дефектовка." : "Результат не даёт оснований для диагноза. Требуется проверка механика.")}</p>}{quickNavigation}{diagnosis.guidance.timingMarks && <section className="timing-marks-card" aria-labelledby="timing-marks-title"><h3 id="timing-marks-title">{ui("Проверка момента начала подачи топлива")}</h3><p>{ui("Сверьте метки по пункту 5.12.1 руководства и сохраните результат. Для этой проверки достаточно отметить, совпали ли метки.")}</p>{diagnosis.guidance.timingMarks?.outcome === "matched" ? <p className="timing-marks-result" role="status"><strong>{ui("Метки совпали.")}</strong> {ui("Аномалия остаётся. Проверьте другие возможные причины по руководству.")}</p> : diagnosis.guidance.timingMarks?.outcome === "mismatched" ? <p className="timing-marks-result" role="status"><strong>{ui("Метки не совпали.")}</strong> {ui("Результат сохранён. Подготовлен отдельный предварительный просмотр подтверждённой регулировки.")}</p> : null}<div className="timing-marks-actions"><PButton type="button" variant="secondary" disabled={busy} onClick={() => void saveTimingMarks("matched")}>{ui("Метки совпадают")}</PButton><PButton type="button" variant="primary" disabled={busy} onClick={() => void saveTimingMarks("mismatched")}>{ui("Метки не совпадают")}</PButton></div></section>}<details className="diagnosis-background"><summary><CircleHelp size={17} aria-hidden="true" />{ui("Обоснование результата")}</summary><p>{ui(diagnosis.guidance.message)}</p>{diagnosis.guidance.confidence?.percent !== null && diagnosis.guidance.confidence?.percent !== undefined && diagnosis.guidance.confidence.thresholdPercent !== undefined && <p>{ui(`Уверенность {confidence} по шкале 0–100%; порог {threshold}%`).replace("{confidence}", confidence).replace("{threshold}", String(diagnosis.guidance.confidence.thresholdPercent))}</p>}{!abstained && typeof rawDiagnosis.description === "string" && <p>{rawDiagnosis.description}</p>}</details>{diagnosisDetails.length > 0 && <dl className="neuro-facts">{diagnosisDetails.map(([label, value]) => <div key={label} className={label === "Качество замера" ? `neuro-quality neuro-quality--${diagnosis.guidance.quality?.value === "good" ? "good" : diagnosis.guidance.quality?.value === "warning" ? "warning" : diagnosis.guidance.quality?.value === "bad" ? "bad" : "unknown"}` : ""}><dt>{ui(label)}</dt><dd style={label === "Риск" ? { color: riskValue === "high" ? "var(--verdict-stop, #a42b27)" : riskValue === "medium" ? "var(--verdict-warning, #805300)" : riskValue === "low" ? "var(--verdict-normal, #15633f)" : undefined, fontWeight: 700 } : undefined}>{ui(String(value))}</dd></div>)}</dl>}{diagnosis.guidance.status === "warning_confirmation_required" && <PButton type="button" variant="primary" disabled={busy} onClick={() => void acknowledgeWarning()}>{ui("Подтверждаю проверку результата")}</PButton>}</div><PTag variant={diagnosis.guidance.status === "normal" ? "success" : diagnosis.guidance.status === "anomaly" ? "warning" : "secondary"}>{ui(diagnosis.guidance.status === "check_failed" ? "Замер не подтверждён" : diagnosis.guidance.status === "uncertain" ? "Недостаточно данных" : diagnosis.guidance.status === "warning_confirmation_required" ? "Нужно подтверждение" : diagnosis.guidance.status === "normal" ? "Отклонений нет" : diagnosis.guidance.status === "model_conflict" ? "Ошибка модели" : diagnosis.guidance.status === "stop" ? "СТОП" : "Требуется внимание")}</PTag></div>}
       {!planMode && <>
       {!diagnosis && quickNavigation}
       <div className="neuro-controls">
@@ -1164,7 +1191,7 @@ function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssis
       </aside>}
       {diagnosis?.guidance.ticketBlockReason === "inspection_only" && <p role="status">{ui("Выполните проверку на месте и запишите результат осмотра в карточке машины.")}</p>}
       {diagnosis?.guidance.canCreateDefectoscopyTicket && <div className="neuro-ticket"><PButton type="button" variant="secondary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket("defectoscopy")}>{ui(ticketId ? "Заявка создана" : "Заявка на дефектовку")}</PButton><span>{ui("Только проверка из руководства; без ремонта и запчастей.")}</span></div>}
-      {diagnosis?.guidance.recommendations.length ? <div className="neuro-section"><h3>{ui("Рекомендации")}</h3><ul>{diagnosis.guidance.recommendations.map((item, i) => <li key={`${item.manual}-${item.pdfPage}-${i}`}>{item.text}{item.excerpt && item.excerpt !== item.text ? <details><summary>Основание в руководстве</summary><p className="neuro-excerpt">{item.excerpt}</p></details> : null} <a href={appPath(item.url)} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a> <button type="button" onClick={() => openRecommendationStep(i)}>{ui("Открыть этот шаг в плане работ")}</button></li>)}</ul></div> : null}
+      {diagnosis?.guidance.recommendations.length ? <div className="neuro-section"><h3>{ui("Рекомендации")}</h3><ul>{diagnosis.guidance.recommendations.map((item, i) => <li key={`${item.manual}-${item.pdfPage}-${i}`}>{normalizeManualText(item.text)}{item.excerpt && item.excerpt !== item.text ? <details><summary>Основание в руководстве</summary><p className="neuro-excerpt">{normalizeManualText(item.excerpt)}</p></details> : null} <a href={appPath(item.url)} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a> <button type="button" onClick={() => openRecommendationStep(i)}>{ui("Открыть этот шаг в плане работ")}</button></li>)}</ul></div> : null}
       {diagnosis?.guidance.status === "anomaly" && !diagnosis.guidance.canCreateTicket && diagnosis.guidance.ticketBlockReason === "manual_evidence_required" && <aside className="neuro-defectoscopy" role="status"><strong>Нужна дефектовка</strong><p>{diagnosis.guidance.message} Для заявки ТОиР пока нет подтверждённой операции со ссылкой на руководство. Запишите условия замера и результаты осмотра в карточке машины.</p></aside>}
       {diagnosis?.guidance.canCreateTicket && ticketPreview?.preview.purpose !== "defectoscopy" && <div className="neuro-ticket" style={{ flexWrap: "wrap" }}><label>{ui("Приоритет заявки")}<select value={draftUrgency} disabled={busy || !!ticketPreview || !!ticketId} onChange={(e) => setDraftUrgency(e.target.value as "low" | "medium" | "high")}><option value="high">{ui("Высокий · до следующего рейса")}</option><option value="medium">{ui("Средний · к ближайшему плановому ТО")}</option><option value="low">{ui("Низкий · к следующему осмотру")}</option></select></label><PButton type="button" variant="primary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket()}>{ui(ticketId ? "Заявка создана" : "Подготовить просмотр заявки")}</PButton>{historicalPart && <p>{ui("Кандидат детали из истории:")} <strong>{historicalPart}</strong>. {ui("Требует проверки применимости.")}</p>}{!assistantHost && repairTicketPreview}{ticketId && <p role="status">{ui("Номер заявки:")} <strong>{ticketId}</strong></p>}</div>}
       </>}
@@ -1255,7 +1282,7 @@ function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssis
       {repairTicketPreview}
       <form onSubmit={(e) => void askManual(e)}><label>{ui("Вопрос или команда")}<textarea rows={3} maxLength={500} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder={ui("Можно ли своим ходом перегнать машину на базу?")} /></label><PButton type="submit" variant="primary" disabled={!currentVehicle || question.length < 3 || questionBusy || busy}>{ui(questionBusy ? "Ищем в руководствах…" : "Отправить")}</PButton></form>
       {answerUnavailable && <p className="auth-error" role="status">{ui("Сервис подготовки ответа недоступен. Откройте поиск по руководствам в общем помощнике, чтобы посмотреть страницы самостоятельно.")}</p>}
-      {answerText && answerText !== voiceFeedback && <p className="neuro-answer" role="status">{answerText}</p>}
+      {answerText && answerText !== voiceFeedback && <p className="neuro-answer" role="status">{normalizeManualText(answerText)}</p>}
       {conversationNotice && <p role="status">{ui(conversationNotice)}</p>}
       {conversationAuthorizationKey === `${assistantOpenId}:${contextKey}` ? <NeuroChatHistory turns={chatTurns} appPath={appPath} /> : <p role="status">{ui(conversationNotice || "Загрузка")}</p>}
       {answers && (answers.length ? <div className="neuro-section"><details><summary>{ui("Страницы руководства")} · {answers.length}</summary>{answers.map((item, i) => <article key={`${item.manual}-${item.pdfPage}-${i}`}><p>{item.text}</p><a href={appPath(item.url)} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a></article>)}</details></div> : !answerUnavailable && <p className="context-empty" role="status">{ui("В руководствах нет прямого основания для решения. Данных недостаточно: требуется оценка механика и дефектовка.")}</p>)}
@@ -1732,6 +1759,8 @@ export default function App() {
   });
   const vehicleRequest = useRef(0);
   const assistantRequest = useRef(0);
+  const chatThreadRef = useRef<HTMLDivElement | null>(null);
+  const chatPinnedToBottom = useRef(true);
   const reportRequest = useRef(0);
   const evidenceNavigation = useRef(0);
   const selectedRef = useRef(selected);
@@ -1870,16 +1899,24 @@ export default function App() {
     setHeaderMode(null);
     setDictating(false);
   }
-  const vehicleEngineModel = matchingEngineManual(vehicle?.engine);
+  const assistantVehicle = page === "Карточка" ? vehicle || null : page === "Заявки" && activeRequest ? data?.vehicles.find((item) => item.id === activeRequest.vehicleId) || null : null;
+  const assistantEngineModel = assistantVehicle ? engineModel : "";
   const chatScope = manualOnly
     ? `mehay-manual-chat-${encodeURIComponent(engineModel)}`
-    : vehicle?.id && engineModel !== vehicleEngineModel
-      ? `mehay-chat-${vehicle.id}-engine-${encodeURIComponent(engineModel)}`
-      : `mehay-chat-${vehicle?.id || "none"}`;
+    : assistantVehicle?.id && assistantEngineModel !== matchingEngineManual(assistantVehicle.engine)
+      ? `mehay-chat-${assistantVehicle.id}-engine-${encodeURIComponent(assistantEngineModel)}`
+      : assistantVehicle?.id ? `mehay-chat-${assistantVehicle.id}` : "mehay-general-chat";
   useEffect(() => {
     setEngineModel(matchingEngineManual(vehicle?.engine));
   }, [vehicle?.id]);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    assistantRequest.current += 1;
+    setAssistantBusy(false);
+    setAnswer("");
+    setAssistantError("");
+    setAssistantSources([]);
+    setProgressiveAnswer(null);
+    setMessage("");
     try {
       const saved = JSON.parse(authBoundary.read(chatScope) || "[]") as ChatMessage[];
       setChatHistory(Array.isArray(saved) ? saved : []);
@@ -2552,14 +2589,40 @@ export default function App() {
       return;
     }
     const userMessage = (prompt ?? message).trim();
-    if (chatLoadedScope !== chatScope || (!manualOnly && !vehicle) || !userMessage || (manualOnly && !engineModel)) return;
+    if (chatLoadedScope !== chatScope || !userMessage || (manualOnly && !engineModel)) return;
     const requestId = ++assistantRequest.current;
-    const requestedVehicleId = manualOnly ? null : vehicle?.id || null;
+    const requestedVehicleId = manualOnly ? null : assistantVehicle?.id || null;
+    const assistantRequestDraft = assistantVehicle && (page === "Заявки" && activeRequest || (page === "Карточка" && (modal || tab === "planning")))
+      ? tab === "planning" && page === "Карточка" && !modal
+        ? {
+            type: "repair",
+            title: planningTitle,
+            description: `Наблюдение механика: ${planningObservation}`,
+            workItems: [{ title: planningTitle, quantity: 1, unit: "работа", done: false, urgency: workUrgency }],
+            parts: Object.entries(plannedParts).filter(([, value]) => Number(value.quantity) > 0).map(([partId, value]) => ({ partId, quantity: Number(value.quantity), usedQuantity: 0, urgency: value.urgency })),
+          }
+        : activeRequest ? {
+            type: activeRequest.type,
+            title: activeRequest.title,
+            description: activeRequest.description,
+            workItems: activeRequest.workItems || [],
+            parts: activeRequest.parts || [],
+          }
+        : {
+            type: form.type,
+            title: form.title,
+            description: [form.description, requestDraft.trim()].filter(Boolean).join("\n"),
+            workItems: requestWork.trim() ? [{ title: requestWork.trim(), quantity: 1, unit: "работа", done: false }] : [],
+            parts: requestPartId ? [{ partId: requestPartId, quantity: Number(requestPartQty), usedQuantity: 0 }] : [],
+          }
+      : undefined;
     const nextHistory = [
       ...chatHistory,
       { role: "user" as const, content: userMessage },
     ].slice(-12);
+    chatPinnedToBottom.current = true;
     setChatHistory(nextHistory);
+    setProgressiveAnswer(null);
     setAssistantBusy(true);
     setAssistantError("");
     setAnswer("");
@@ -2607,42 +2670,18 @@ export default function App() {
             body: JSON.stringify({
               vehicleId: requestedVehicleId,
               language: interfaceLanguage,
-              ...(engineModel ? { engineModel } : {}),
+              ...(assistantEngineModel ? { engineModel: assistantEngineModel } : {}),
               message: userMessage,
               webSearch,
               ...(webSearch ? { webQuery: webQuery.trim(), ...(webDomain ? { webDomain } : {}) } : {}),
               history: assistantHistoryForRequest(chatHistory),
-              requestDraft: tab === "planning" && !modal && !activeRequest ? {
-                type: "repair",
-                title: planningTitle,
-                description: `Наблюдение механика: ${planningObservation}`,
-                workItems: [{ title: planningTitle, quantity: 1, unit: "работа", done: false, urgency: workUrgency }],
-                parts: Object.entries(plannedParts).filter(([, value]) => Number(value.quantity) > 0).map(([partId, value]) => ({ partId, quantity: Number(value.quantity), usedQuantity: 0, urgency: value.urgency })),
-              } : {
-                type: activeRequest?.type || form.type,
-                title: activeRequest?.title || form.title,
-                description: [
-                  activeRequest?.description || form.description,
-                  requestDraft.trim(),
-                ].filter(Boolean).join("\n"),
-                workItems:
-                  activeRequest?.workItems ||
-                  (requestWork.trim()
-                    ? [{ title: requestWork.trim(), quantity: 1, unit: "работа", done: false }]
-                    : []),
-                parts:
-                  activeRequest?.parts ||
-                  (requestPartId
-                    ? [{ partId: requestPartId, quantity: Number(requestPartQty), usedQuantity: 0 }]
-                    : []),
-              },
+              ...(assistantRequestDraft ? { requestDraft: assistantRequestDraft } : {}),
             }),
           });
       if (requestId === assistantRequest.current) {
         setAnswer(result.answer);
         setAssistantSources(result.sources || []);
-        setChatHistory(
-          [
+        const completedHistory = [
             ...nextHistory,
             {
               role: "assistant" as const,
@@ -2652,8 +2691,9 @@ export default function App() {
               webSearch,
               ...(webDomain ? { webDomain } : {}),
             },
-          ].slice(-12),
-        );
+          ].slice(-12);
+        setChatHistory(completedHistory);
+        if (!prefersReducedMotion) setProgressiveAnswer({ scope: chatScope, index: completedHistory.length - 1, full: result.answer, text: "" });
         setMessage("");
       }
     } catch (e) {
@@ -2779,6 +2819,35 @@ export default function App() {
       }
     }
   }
+  const [chatWidth, setChatWidth] = useState(() => Math.min(42, Math.max(28, Number(localStorage.getItem("mehay-chat-width")) || 34)));
+  const [busyLabel, setBusyLabel] = useState("Сверяю контекст");
+  const [progressiveAnswer, setProgressiveAnswer] = useState<{ scope: string; index: number; full: string; text: string } | null>(null);
+  const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  useEffect(() => { localStorage.setItem("mehay-chat-width", String(chatWidth)); }, [chatWidth]);
+  useEffect(() => {
+    if (!assistantBusy) return;
+    const labels = ["Сверяю контекст", "Проверяю источники", "Формулирую ответ"];
+    let index = 0;
+    setBusyLabel(labels[0]);
+    const timer = window.setInterval(() => { index = (index + 1) % labels.length; setBusyLabel(labels[index]); }, 1600);
+    return () => window.clearInterval(timer);
+  }, [assistantBusy]);
+  useEffect(() => {
+    if (!progressiveAnswer || prefersReducedMotion) { setProgressiveAnswer(null); return; }
+    const chars = Array.from(progressiveAnswer.full);
+    let shown = 0;
+    const timer = window.setInterval(() => {
+      shown = Math.min(chars.length, shown + Math.max(4, Math.ceil(chars.length / 90)));
+      if (shown >= chars.length) { window.clearInterval(timer); setProgressiveAnswer(null); }
+      else setProgressiveAnswer((current) => current ? { ...current, text: chars.slice(0, shown).join("") } : null);
+    }, 22);
+    return () => window.clearInterval(timer);
+  }, [progressiveAnswer?.scope, progressiveAnswer?.index, progressiveAnswer?.full, prefersReducedMotion]);
+  useEffect(() => {
+    if (!chatPinnedToBottom.current) return;
+    const thread = chatThreadRef.current;
+    if (thread) thread.scrollTop = thread.scrollHeight;
+  }, [chatHistory, assistantBusy, progressiveAnswer]);
   if (authLoading) return <div className={`auth-screen ${theme}`} role="status"><span className="auth-loader" aria-hidden="true" /><p>Проверяем сеанс…</p></div>;
   const requestDescriptionFields = modal && <>
     <label>
@@ -2804,7 +2873,6 @@ export default function App() {
       />
     </label>
   </>;
-  const currentQuestionStart = Math.max(0, chatHistory.map((entry) => entry.role).lastIndexOf("user"));
   const renderChatEntry = (entry: ChatMessage, i: number) => (
                 <article
                   className={`chat-message ${entry.role}`}
@@ -2812,7 +2880,7 @@ export default function App() {
                 >
                   <b>{entry.role === "user" ? "Вы" : "Мехай"}</b>
                   {entry.role === "assistant" ? <AssistantAnswer
-                    answer={entry.content}
+                    answer={progressiveAnswer?.scope === chatScope && progressiveAnswer.index === i ? progressiveAnswer.text : entry.content}
                     evidence={entry.evidence}
                     sources={entry.sources}
                     webSearch={entry.webSearch}
@@ -4535,7 +4603,7 @@ export default function App() {
           )}
         </main>
         {chatOpen && (
-          <dialog ref={assistantDialog} className="header-assistant-dialog" data-theme={theme} aria-label={t(headerMode === "voice" ? "Голосовое управление механика" : "Задать вопрос", interfaceLanguage)} onCancel={event => { event.preventDefault(); closeAssistant(); }}>
+          <dialog ref={assistantDialog} className="header-assistant-dialog" style={{ width: `min(${chatWidth}rem, 100%)` }} data-theme={theme} aria-label={t(headerMode === "voice" ? "Голосовое управление механика" : "Задать вопрос", interfaceLanguage)} onCancel={event => { event.preventDefault(); closeAssistant(); }}>
           {diagnosticAssistant ? <div className="diagnostic-assistant">
             <div className="drawer-head"><div><strong>{t(headerMode === "voice" ? "Голосовое управление механика" : "Задать вопрос", interfaceLanguage)}</strong><p>{vehicle?.plate} · {vehicle?.model}</p></div>
               <button type="button" className="icon-btn" aria-label={translateSystemText("Закрыть", interfaceLanguage)} onClick={closeAssistant}><X size={20}/></button>
@@ -4543,129 +4611,37 @@ export default function App() {
           </div> : (
           <aside className="chat-drawer" data-theme={theme} aria-label="Чат помощника">
             <div className="drawer-head">
-              <div>
-                <h2>Мехай</h2>
-                <p>
-                  {manualOnly
-                    ? `Поиск по руководству: ${engineModel || "выберите двигатель"}`
-                    : vehicle
-                    ? `Контекст: ${vehicle.plate} · ${vehicle.model}`
-                    : "Выберите машину для контекста"}
-                </p>
-              </div>
-              <button
-                className="icon-btn"
-                aria-label="Закрыть чат"
-                onClick={closeAssistant}
-              >
-                <X size={19} />
-              </button>
+              <div><h2>Мехай</h2><p>{manualOnly ? `Поиск по руководству: ${engineModel || "выберите двигатель"}` : assistantVehicle ? `Контекст: ${assistantVehicle.plate} · ${assistantVehicle.model}` : "Общий вопрос"}</p></div>
+              <button className="icon-btn" aria-label="Закрыть чат" onClick={closeAssistant}><X size={19} /></button>
             </div>
             <details className="chat-settings">
               <summary>Настройки поиска</summary>
               <div className="chat-settings-content">
-                <label className="manual-only-toggle">
-                  <input type="checkbox" checked={manualOnly} onChange={(e) => changeManualOnly(e.target.checked)} />
-                  Искать только по руководству
-                </label>
-                {manualOnly && <label className="engine-manual-select drawer-engine-select">
-                  Двигатель для поиска по руководствам
-                  <select value={engineModel} onChange={(e) => changeEngineModel(e.target.value)}>
-                    <option value="">Выберите двигатель</option>
-                    {engineManuals.map((item) => <option key={item.value} value={item.value}>{interfaceText(item.label)}</option>)}
-                  </select>
-                  <small>Доступны руководства по пяти точным вариантам двигателя.</small>
-                </label>}
-                <label className="web-search">
-                  <input
-                    type="checkbox"
-                    checked={webSearch}
-                    onChange={(e) => {
-                      setWebSearch(e.target.checked);
-                      if (!e.target.checked) setWebQuery("");
-                    }}
-                    disabled={manualOnly}
-                  />{" "}
-                  Искать в открытых источниках
-                </label>
+                <label className="manual-only-toggle"><input type="checkbox" checked={manualOnly} onChange={(e) => changeManualOnly(e.target.checked)} /> Искать только по руководству</label>
+                {manualOnly && <label className="engine-manual-select drawer-engine-select">Двигатель для поиска по руководствам<select value={engineModel} onChange={(e) => changeEngineModel(e.target.value)}><option value="">Выберите двигатель</option>{engineManuals.map((item) => <option key={item.value} value={item.value}>{interfaceText(item.label)}</option>)}</select><small>Доступны руководства по пяти точным вариантам двигателя.</small></label>}
+                <label className="web-search"><input type="checkbox" checked={webSearch} onChange={(e) => { setWebSearch(e.target.checked); if (!e.target.checked) setWebQuery(""); }} disabled={manualOnly} /> Искать в открытых источниках</label>
+                <label className="chat-width-setting">Ширина чата <input type="range" min="28" max="48" step="1" value={chatWidth} onChange={(e) => setChatWidth(Number(e.target.value))} /><span>{chatWidth} rem</span></label>
               </div>
             </details>
-            <label className="drawer-compose">
-              Ваше наблюдение или вопрос
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Опишите наблюдение или вопрос"
-              />
-            </label>
-            {headerMode === "voice" && isSpeechRecognitionAvailable() ? <div>
-              <button type="button" className="theme-toggle" aria-pressed={dictating} disabled={assistantBusy} onClick={() => setDictating(!dictating)}><Mic size={18}/>{t(dictating ? "Завершить разговор" : "Начать голосовое управление", interfaceLanguage)}</button>
-              <VoiceInput mode="managed" active={dictating} onListeningChange={setDictating} disabled={assistantBusy} onTranscript={text => { setDictating(false);
-                setMessage(appendTranscript(message, text));
-                if (!message.trim() && !webSearch && (manualOnly ? engineModel : data?.ai.configured)) setAutoSendPrompt(text); }} />
-            </div> : vehicle && <VoiceInput key={`chat-${vehicle.id}`} onTranscript={(text) => setMessage((current) => appendTranscript(current, text))} disabled={assistantBusy} />}
-            {webSearch && (
-              <label className="web-query-field drawer-web-query">
-                Запрос для открытого веб-поиска
-                <select value={webDomain} onChange={(e) => setWebDomain(e.target.value)} aria-label="Область веб-поиска">
-                  <option value="">Все открытые источники</option><option value="drive.ru">Только Drive.ru</option><option value="drive2.ru">Только Drive2.ru · форум</option><option value="oem">Документы OEM · ГАЗ</option>
-                </select>
-                <textarea
-                  value={webQuery}
-                  onChange={(e) => setWebQuery(e.target.value)}
-                  maxLength={1000}
-                  required
-                  aria-required="true"
-                  placeholder="Введите отдельную формулировку для публичного поиска"
-                />
-                <small>Этот текст будет отправлен во внешний веб-поиск. Вопрос и заметки из чата сюда не копируются. {webQuery.length}/1000</small>
-              </label>
-            )}
-            <p className="drawer-note">
-              {manualOnly ? "Будут показаны найденные фрагменты и страницы выбранного руководства без обработки ИИ." : "Черновик заявки и данные машины добавляются автоматически. Решение остаётся за механиком."}
-            </p>
-            <PButton type="button"
-              variant="primary"
-              disabled={
-                (manualOnly ? !engineModel : !data?.ai.configured) || assistantBusy || chatLoadedScope !== chatScope || !message.trim()
-                || (webSearch && !webQuery.trim())
-              }
-              onClick={() =>
-                void askAssistant(
-                  new Event("submit") as unknown as React.FormEvent,
-                )
-              }
-            >
-              <Send size={16} /> Отправить вопрос
-            </PButton>
-            <div className="chat-thread" aria-live="polite" aria-relevant="additions text">
-              {chatLoadedScope === chatScope && chatHistory.length === 0 && !assistantBusy && (
-                <div className="chat-empty">
-                  <MessageSquareText size={22} />
-                  <b>Обсудим данные этой машины</b>
-                  <p>Опишите, что заметили при осмотре. Мехай поможет сверить факты и предложит, что проверить.</p>
-                  <div className="chat-prompts">
-                    {["Что проверить по кодам ЭБУ?", "С чем сверить пробег?", "Какие вопросы задать перед заменой детали?"].map((prompt) => (
-                      <button key={prompt} type="button" disabled={assistantBusy || (!manualOnly && !data?.ai.configured)} onClick={(event) => void askAssistant(event, prompt)}>{prompt}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {chatLoadedScope === chatScope && chatHistory.slice(currentQuestionStart).map(renderChatEntry)}
-              {assistantBusy && (
-                <div className="chat-message assistant chat-busy" role="status">
-                  <span className="busy-dots" aria-hidden="true"><i /><i /><i /></span>
-                  <span>Мехай сверяет данные</span>
-                </div>
-              )}
-              {assistantError && (
-                <p className="field-error">{assistantError}</p>
-              )}
+            <div ref={chatThreadRef} className="chat-thread" aria-live="polite" aria-relevant="additions text" onScroll={(event) => {
+              const el = event.currentTarget;
+              chatPinnedToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+            }}>
+              {chatLoadedScope === chatScope && chatHistory.length === 0 && !assistantBusy && <div className="chat-empty"><MessageSquareText size={22} /><b>{assistantVehicle ? "Обсудим данные этой машины" : "Задайте общий вопрос"}</b><p>{assistantVehicle ? "Опишите, что заметили при осмотре. Мехай поможет сверить факты и предложит, что проверить." : "Можно задать вопрос по работе сервиса, диагностике или ремонту."}</p><div className="chat-prompts">{["Что проверить по кодам ЭБУ?", "С чем сверить пробег?", "Какие вопросы задать перед заменой детали?"].map((prompt) => <button key={prompt} type="button" disabled={assistantBusy || (!manualOnly && !data?.ai.configured)} onClick={(event) => void askAssistant(event, prompt)}>{prompt}</button>)}</div></div>}
+              {chatLoadedScope === chatScope && chatHistory.map((entry, index) => renderChatEntry(entry, index))}
+              {assistantBusy && <div className="chat-message assistant chat-busy" role="status"><span className="busy-dots" aria-hidden="true"><i /><i /><i /></span><span>{busyLabel}</span></div>}
+              {assistantError && <p className="field-error" role="alert">{assistantError}</p>}
             </div>
-            {chatLoadedScope === chatScope && currentQuestionStart > 0 && <details className="chat-previous">
-              <summary>Предыдущие вопросы ({chatHistory.slice(0, currentQuestionStart).filter((entry) => entry.role === "user").length})</summary>
-              {chatHistory.slice(0, currentQuestionStart).map(renderChatEntry)}
-            </details>}
+            <form className="chat-composer" onSubmit={(event) => void askAssistant(event)}>
+              {headerMode === "voice" && isSpeechRecognitionAvailable() ? <div><button type="button" className="theme-toggle" aria-pressed={dictating} disabled={assistantBusy} onClick={() => setDictating(!dictating)}><Mic size={18}/>{t(dictating ? "Завершить разговор" : "Начать голосовое управление", interfaceLanguage)}</button><VoiceInput mode="managed" active={dictating} onListeningChange={setDictating} disabled={assistantBusy} onTranscript={text => { setDictating(false); setMessage(appendTranscript(message, text)); if (!message.trim() && !webSearch && (manualOnly ? engineModel : data?.ai.configured)) setAutoSendPrompt(text); }} /></div> : assistantVehicle && <VoiceInput key={`chat-${assistantVehicle.id}`} onTranscript={(text) => setMessage((current) => appendTranscript(current, text))} disabled={assistantBusy} />}
+              {webSearch && <label className="web-query-field drawer-web-query">Запрос для открытого веб-поиска<select value={webDomain} onChange={(e) => setWebDomain(e.target.value)} aria-label="Область веб-поиска"><option value="">Все открытые источники</option><option value="drive.ru">Только Drive.ru</option><option value="drive2.ru">Только Drive2.ru · форум</option><option value="oem">Документы OEM · ГАЗ</option></select><textarea value={webQuery} onChange={(e) => setWebQuery(e.target.value)} maxLength={1000} required aria-required="true" placeholder="Введите отдельную формулировку для публичного поиска"/><small>Этот текст будет отправлен во внешний веб-поиск. Вопрос и заметки из чата сюда не копируются. {webQuery.length}/1000</small></label>}
+              <label className="drawer-compose">Ваш вопрос<textarea value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => {
+                if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                event.preventDefault(); event.currentTarget.form?.requestSubmit();
+              }} placeholder="Опишите наблюдение или задайте вопрос" /></label>
+              <p className="drawer-note">{manualOnly ? "Будут показаны найденные фрагменты и страницы выбранного руководства без обработки ИИ." : assistantVehicle ? "Черновик заявки и данные машины добавляются автоматически. Решение остаётся за механиком." : "Общий вопрос; данные машины и черновик не добавляются."}</p>
+              <PButton type="submit" variant="primary" disabled={(manualOnly ? !engineModel : !data?.ai.configured) || assistantBusy || chatLoadedScope !== chatScope || !message.trim() || (webSearch && !webQuery.trim())}><Send size={16} /> Отправить</PButton>
+            </form>
           </aside>)}
           </dialog>
         )}

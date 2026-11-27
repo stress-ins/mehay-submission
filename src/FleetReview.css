@@ -1,5 +1,8 @@
 .fleet-review { padding: clamp(16px, 2vw, 28px); grid-column: 1 / -1; }
+.dashboard-grid.overview-workspace { height: auto; min-height: 0; }
 .fleet-review h2 span, .stored-result small { color: var(--muted); }
+.fleet-review-search { display: grid; gap: 6px; max-width: 520px; margin: 12px 0; font-weight: 600; }
+.fleet-review-search input { min-height: 44px; width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--paper); font: inherit; }
 .fleet-review-list { padding: 0; list-style: none; margin: 12px 0; }
 .fleet-review-list li, .stored-result { padding: 14px 0; border-top: 1px solid var(--line); }
 .fleet-review-identity, .fleet-review-actions, .stored-result strong, .stored-result p { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

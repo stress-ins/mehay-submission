@@ -4075,6 +4075,7 @@ body, button, input, select, textarea { font-family: system-ui, -apple-system, "
   .chat-launch { position: static; margin: 12px auto; }
 }
 
+.purchase-history .request-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
 .purchase-history details p > small { display: block; margin-top: 3px; }
 .mehay-modal > .procurement-confirmation { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 .procurement-confirmation input[type="checkbox"] { flex: none; width: 22px; min-height: 22px; height: 22px; }

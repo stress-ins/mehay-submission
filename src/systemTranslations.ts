@@ -5,6 +5,12 @@ import type { MechanicLanguageCode } from "./neuroVoiceIntents";
 
 // Shared interface vocabulary: business values and user-entered content are never rewritten.
 const translations: Record<string, Partial<Record<MechanicLanguageCode, string>>> = {
+  "Последнее надёжное акустическое измерение не выявило отклонений.": { en: "The latest reliable acoustic measurement found no anomalies.", hi: "नवीनतम विश्वसनीय ध्वनिक माप में कोई विसंगति नहीं मिली।", tg: "Андозагирии боэътимоди охирини акустикӣ инҳирофро ошкор накард.", uz: "So‘nggi ishonchli akustik o‘lchov og‘ishlarni aniqlamadi." },
+  "Надёжное измерение выявило {0} с оценкой {1}; требуется решение механика о допуске.": { en: "A reliable measurement detected {0} with a score of {1}; a mechanic must decide whether to clear it.", hi: "विश्वसनीय माप में {0} मिला, जिसका स्कोर {1} है; अनुमति देने का निर्णय मैकेनिक को करना होगा।", tg: "Андозагирии боэътимод {0}-ро бо баҳои {1} ошкор кард; механик бояд дар бораи иҷозат қарор қабул кунад.", uz: "Ishonchli o‘lchov {0} ni {1} baho bilan aniqladi; ruxsat berish haqida mexanik qaror qilishi kerak." },
+  "Последнее измерение не прошло проверку качества; требуется повторная запись.": { en: "The latest measurement failed the quality check; record it again.", hi: "नवीनतम माप गुणवत्ता जाँच में विफल रहा; इसे फिर से रिकॉर्ड करें।", tg: "Андозагирии охирин санҷиши сифатро нагузашт; онро дубора сабт кунед.", uz: "So‘nggi o‘lchov sifat tekshiruvidan o‘tmadi; uni qayta yozib oling." },
+  "Код неисправности не соответствует двигателю. Проверьте машину и повторите замер.": { en: "The fault code does not match the engine. Check the vehicle and measure again.", hi: "खराबी कोड इंजन से मेल नहीं खाता। वाहन जाँचें और फिर से मापें।", tg: "Рамзи нуқсон ба муҳаррик мувофиқат намекунад. Мошинро санҷед ва ченкуниро такрор кунед.", uz: "Nosozlik kodi dvigatelga mos kelmaydi. Mashinani tekshirib, o‘lchovni takrorlang." },
+  "Последнее измерение не подтверждено по качеству, уверенности или оценке риска.": { en: "The latest measurement was not confirmed for quality, confidence, or risk score.", hi: "नवीनतम माप की गुणवत्ता, विश्वास स्तर या जोखिम स्कोर की पुष्टि नहीं हुई।", tg: "Сифат, эътимод ё баҳои хавфи андозагирии охирин тасдиқ нашуд.", uz: "So‘nggi o‘lchov sifati, ishonchliligi yoki xavf bahosi tasdiqlanmadi." },
+  "Последнее измерение выявило {0}; требуется осмотр механика.": { en: "The latest measurement detected {0}; a mechanic inspection is required.", hi: "नवीनतम माप में {0} मिला; मैकेनिक से जाँच आवश्यक है।", tg: "Андозагирии охирин {0}-ро ошкор кард; муоинаи механик лозим аст.", uz: "So‘nggi o‘lchov {0} ni aniqladi; mexanik ko‘rigi kerak." },
   "Доступ механиков к машинам": { en: "Mechanic access to vehicles" },
   "Назначенные механики могут читать историю вопросов и ответов по выбранной машине.": { en: "Assigned mechanics can read the question and answer history for the selected vehicle." },
   "Машина": { en: "Vehicle" },
@@ -151,6 +157,12 @@ const translations: Record<string, Partial<Record<MechanicLanguageCode, string>>
   "Новая заявка": { en: "New request", hi: "नया अनुरोध", tg: "Дархости нав", uz: "Yangi so‘rov" },
   "50 автомобилей в парке": { en: "50 vehicles in fleet", hi: "बेड़े में 50 वाहन", tg: "50 мошин дар парк", uz: "Avtoparkda 50 ta avtomobil" },
   "Очередь внимания": { en: "Attention queue", hi: "ध्यान कतार", tg: "Навбати диққат", uz: "Eʼtibor navbati" },
+  "Свежую сводку замеров загрузить не удалось. Ниже показаны сохранённые данные парка.": { en: "Could not load the latest measurement summary. Saved fleet data is shown below.", hi: "नवीनतम माप सारांश लोड नहीं हो सका। नीचे सहेजा गया बेड़ा डेटा दिखाया गया है।", tg: "Хулосаи охирини андозагирӣ бор карда нашуд. Маълумоти захирашудаи парк дар зер нишон дода шудааст.", uz: "Eng so‘nggi o‘lchov xulosasini yuklab bo‘lmadi. Quyida avtoparkning saqlangan maʼlumotlari ko‘rsatilgan." },
+  "Все проверки завершены.": { en: "All checks are complete.", hi: "सभी जाँचें पूरी हो गई हैं।", tg: "Ҳамаи санҷишҳо анҷом ёфтанд.", uz: "Barcha tekshiruvlar yakunlandi." },
+  "Открыть диагностику": { en: "Open diagnostics", hi: "निदान खोलें", tg: "Ташхисро кушоед", uz: "Diagnostikani ochish" },
+  "Продолжить осмотр": { en: "Continue inspection", hi: "निरीक्षण जारी रखें", tg: "Санҷишро идома диҳед", uz: "Ko‘rikni davom ettirish" },
+  "Открыть план работ": { en: "Open work plan", hi: "कार्य योजना खोलें", tg: "Нақшаи корро кушоед", uz: "Ish rejasini ochish" },
+  "Свернуть очередь": { en: "Show fewer", hi: "कम दिखाएँ", tg: "Камтар нишон диҳед", uz: "Kamroq ko‘rsatish" },
   "Активные заявки": { en: "Active requests", hi: "सक्रिय अनुरोध", tg: "Дархостҳои фаъол", uz: "Faol so‘rovlar" },
   "Нет открытых заявок.": { en: "No open requests.", hi: "कोई खुला अनुरोध नहीं।", tg: "Дархости кушода нест.", uz: "Ochiq so‘rovlar yo‘q." },
   "Вопрос по автомобилю": { en: "Vehicle question", hi: "वाहन के बारे में प्रश्न", tg: "Савол дар бораи мошин", uz: "Avtomobil haqida savol" },
@@ -329,4 +341,12 @@ export function translateInterfaceText(text: string, language: MechanicLanguageC
 
 export function translateSystemText(text: string, language: MechanicLanguageCode) {
   return translateInterfaceText(text, language);
+}
+
+export function translateNeuroReason(reason: string, language: MechanicLanguageCode) {
+  const quarantine = /^Надёжное измерение выявило (.+) с оценкой (.+); требуется решение механика о допуске\.$/u.exec(reason);
+  if (quarantine) return translateInterfaceText("Надёжное измерение выявило {0} с оценкой {1}; требуется решение механика о допуске.", language, quarantine.slice(1));
+  const anomaly = /^Последнее измерение выявило (.+); требуется осмотр механика\.$/u.exec(reason);
+  if (anomaly) return translateInterfaceText("Последнее измерение выявило {0}; требуется осмотр механика.", language, anomaly.slice(1));
+  return translateInterfaceText(reason, language);
 }

@@ -3,14 +3,11 @@ import { ChevronLeft, ChevronRight, Check, Mic, MicOff, Volume2, BookOpen } from
 import { hasStepValue, type MechanicPlanLanguage } from "./neuroPlanIntents";
 import { useSystemLanguage } from "./systemLanguage";
 import { translateInterfaceText as t } from "./systemTranslations";
+import { normalizeManualText } from "./manualText";
 import "./NeuroWorkflow.css";
 
-export type ManualEvidenceItem = { text: string; sourceText?: string; language?: MechanicPlanLanguage; originalLanguage?: boolean; translations?: Partial<Record<Exclude<MechanicPlanLanguage, "ru">, string>>; title?: string; manual: string; pdfPage: number; url: string };
+export type ManualEvidenceItem = { text: string; sourceText?: string; excerpt?: string; illustrationUrl?: string; illustrationPage?: number; illustrationCaption?: string; language?: MechanicPlanLanguage; originalLanguage?: boolean; translations?: Partial<Record<Exclude<MechanicPlanLanguage, "ru">, string>>; title?: string; manual: string; pdfPage: number; url: string };
 export type NeuroChatTurn = { manualVerified?: boolean; sessionId?: string; author?: string; role: "mechanic" | "assistant"; text: string; evidence: ManualEvidenceItem[] };
-
-export function normalizeManualLineBreaks(text: string): string {
-  return text.replace(/([\p{L}])[-‐‑]\r?\n[\t ]*([\p{L}])/gu, "$1$2");
-}
 
 export function NeuroChatHistory({ turns, appPath }: { turns: NeuroChatTurn[]; appPath: (path: string) => string }) {
   const language = useSystemLanguage();
@@ -59,7 +56,10 @@ export default function NeuroWorkflow({ vehicle, engine, session, checkedAt, con
     {current && <div className="neuro-step-plan" tabIndex={-1}>
       <h3>{`${t("План работ · шаг", language)} ${step + 1} ${t("из", language)} ${recommendations.length}`}</h3>
         <div className="workshop-step-body" aria-live="polite" aria-atomic="true">
-          <div>{current.title && <h4>{current.title}</h4>}{current.originalLanguage && <small>{t("Текст и озвучивание на языке руководства · Русский", language)}</small>}<p lang={current.language}>{normalizeManualLineBreaks(current.text).split(/(\d+(?:[,.]\d+)?(?:\s*[–—±-]\s*\d+(?:[,.]\d+)?)?\s*(?:Н[·•⋅.]?м|мм|°С|°)|S=\d+)/gu).map((part, index) => index % 2 ? <strong key={index}>{part}</strong> : part)}</p></div>
+          <div>{current.title && <h4>{current.title}</h4>}{current.originalLanguage && <small>{t("Текст и озвучивание на языке руководства · Русский", language)}</small>}<p lang={current.language}>{normalizeManualText(current.text).split(/(\d+(?:[,.]\d+)?(?:\s*[–—±-]\s*\d+(?:[,.]\d+)?)?\s*(?:Н[·•⋅.]?м|мм|°С|°)|S=\d+)/gu).map((part, index) => index % 2 ? <strong key={index}>{part}</strong> : part)}</p>
+            {current.excerpt && <div className="workshop-manual-source"><strong>{t("Цитата из оригинала на русском", language)}</strong><blockquote lang="ru">{normalizeManualText(current.excerpt)}</blockquote></div>}
+            {current.illustrationUrl && <figure className="workshop-manual-source"><img src={appPath(current.illustrationUrl)} alt={`${current.manual}, ${t("страница", language)} ${current.illustrationPage || ""}`} /><figcaption>{current.illustrationCaption}</figcaption></figure>}
+          </div>
         </div>
         <ManualEvidence key={current.url} pageRequest={pageRequest} item={current} appPath={appPath} linkLabel={t("Открыть руководство · стр. {page}", language).replace("{page}", String(current.pdfPage))} />
         {measurements.length > 0 && <details className="workshop-values"><summary>{t("Моменты и зазоры по шагам", language)}</summary>

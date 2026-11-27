@@ -73,6 +73,11 @@ export function validateKnowledge(root, mockDataPath) {
       typeof item.quote !== "string" || !item.quote.trim() ||
       !manual.engineKeys.includes(item.engineModel.toLocaleLowerCase("ru")) || typeof page !== "string" ||
       !page.toLocaleLowerCase("ru").replace(/\s+/gu, " ").includes(item.quote.toLocaleLowerCase("ru").replace(/\s+/gu, " ")) ||
+      (item.sourceSha256 != null && item.sourceSha256 !== manual.sha256) ||
+      (item.complaintTerms != null && (!Array.isArray(item.complaintTerms) || !item.complaintTerms.length ||
+        item.complaintTerms.some((term) => typeof term !== "string" || !term.trim()))) ||
+      (item.supersedes != null && (!Array.isArray(item.supersedes) || item.supersedes.some((entry) =>
+        typeof entry?.manualId !== "string" || !Number.isSafeInteger(entry.pdfPage) || entry.pdfPage < 1))) ||
       (item.translations != null && (typeof item.translations !== "object" || Array.isArray(item.translations) ||
         Object.entries(item.translations).some(([language, text]) => !["en", "hi", "tg", "uz"].includes(language) || typeof text !== "string" || !text.trim())))) {
       throw new Error("private guidance is invalid");

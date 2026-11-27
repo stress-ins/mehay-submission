@@ -73,6 +73,15 @@ test("SYNTH-SESSION-0015 engine and F08 mismatch is reported as a model conflict
   assert.equal((await post("/api/neuro/tickets/preview", { vehicleId: "SYNTH-005", sessionId: "SYNTH-SESSION-0015", urgency: "high", operations: ["some operation"] })).status, 409);
 });
 
+test("spark ignition fault on a diesel requires review before repair", async t => {
+  const ids = { vehicleId: "SYNTH-001", sessionId: "SYNTH-SESSION-0003" };
+  const { post } = await fixture(t, async () => Response.json(mlResult(ids.sessionId, { anomaly_type: "F12", anomaly_title: "Зажигание" })));
+  const diagnosis = await (await post("/api/neuro/diagnose", ids)).json();
+  assert.equal(diagnosis.guidance.status, "model_conflict");
+  assert.equal(diagnosis.guidance.canCreateTicket, false);
+  assert.equal(diagnosis.guidance.nextAction, "repeat_or_defectoscopy");
+});
+
 test("warning requires explicit acknowledgement, bad signal stops, and preview supports manual urgency", async (t) => {
   let toirPayload;
   const { post } = await fixture(t, async (url, { body }) => {
@@ -544,4 +553,46 @@ test("a mechanic can reopen a measurement conversation without leaking history o
   assert.deepEqual((await (await get(route.replace("SYNTH-SESSION-0003", "SYNTH-SESSION-0002"))).json()).exchanges, [{ ...exchange, manualVerified: false, evidence: [], sessionId: "SYNTH-SESSION-0003", author: { userId: "mechanic", login: "", displayName: "" } }]);
   assert.equal((await get(route.replace("SYNTH-001", "SYNTH-002"))).status, 404);
   assert.deepEqual((await (await get("/api/neuro/vehicles/SYNTH-005/sessions/SYNTH-SESSION-0015/conversation")).json()).exchanges, []);
+});
+
+test("physical timing findings gate adjustment and preserve the anomaly", async (t) => {
+  const ids = { vehicleId: "SYNTH-001", sessionId: "SYNTH-SESSION-0003" };
+  const check = { ...syntheticRecommendations({}, { status: "anomaly" })[0], operationKind: "inspection", stepKey: "check_timing_marks" };
+  const adjust = { ...check, text: "Adjust synthetic timing", stepKey: "injection_timing_adjustment", operationKind: "conditional" };
+  const { get, post, db } = await fixture(t, async (url) => String(url).includes("8002")
+    ? Response.json({ ticket_id: "SYNTHETIC-TIMING-TICKET", status: "created" }, { status: 201 })
+    : Response.json(mlResult(ids.sessionId)), undefined, () => [{ ...check, operationKind: undefined, stepKey: undefined, text: "Other maintenance" }, check, adjust]);
+  const diagnosis = await (await post("/api/neuro/diagnose", ids)).json();
+  const record = outcome => post("/api/neuro/diagnosis/timing-marks", { ...ids, resultHash: diagnosis.resultHash, outcome });
+  const preview = () => previewTicket(post, { ...ids, diagnosis, operations: [adjust.text] });
+  assert.deepEqual(diagnosis.guidance.timingMarks, { outcome: null });
+  assert.deepEqual(diagnosis.guidance.recommendations.map(item => item.stepKey), ["check_timing_marks"]);
+  assert.equal(diagnosis.guidance.canCreateTicket, false);
+  assert.equal((await preview()).status, 409);
+  assert.equal((await record("unknown")).status, 400);
+  const mismatch = await (await record("mismatched")).json();
+  assert.equal(mismatch.guidance.canCreateTicket, true);
+  const revision = () => db.prepare("SELECT revision FROM neuro_diagnoses").get().revision;
+  const firstRevision = revision();
+  assert.equal((await record("mismatched")).status, 200);
+  assert.equal(revision(), firstRevision);
+  const draft = await preview();
+  assert.equal(draft.status, 201);
+  const matched = await (await record("matched")).json();
+  assert.equal(matched.guidance.status, "anomaly");
+  assert.equal(matched.guidance.timingMarks.outcome, "matched");
+  assert.equal(matched.guidance.canCreateTicket, false);
+  const history = await (await get("/api/neuro/history?vehicleId=" + ids.vehicleId)).json();
+  assert.equal(history.diagnoses[0].timingMarks, "matched");
+  assert.equal(history.diagnoses[0].status, "anomaly");
+  assert.equal((await confirmTicket(post, draft)).status, 409);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM neuro_tickets").get().n, 0);
+  const replay = await (await post("/api/neuro/diagnose", ids)).json();
+  assert.equal(replay.guidance.timingMarks.outcome, "matched");
+  assert.equal((await preview()).status, 409);
+  assert.equal((await record("mismatched")).status, 200);
+  const confirmedDraft = await preview();
+  assert.equal(db.prepare("SELECT count(*) AS n FROM neuro_tickets").get().n, 0);
+  assert.equal((await confirmTicket(post, confirmedDraft)).status, 201);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM neuro_tickets").get().n, 1);
 });

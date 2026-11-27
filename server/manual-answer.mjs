@@ -8,6 +8,21 @@ export function isYamzMainBearingTorqueQuestion(engineModel, query) {
     && /момент|затяж|болт|креплен/iu.test(query);
 }
 
+export function isRoadworthinessQuestion(query) {
+  const normalized = query.toLocaleLowerCase("ru").replace(/[’‘`]/gu, "'");
+  return /(?:своим ходом|перег(?:нать|он)|можно ли (?:ехать|доехать)|продолж(?:ить|ать) движение|безопасно ли (?:ехать|двигаться)|дальше ехать|допустим[оа] ли движение|drive (?:it|the car)|move (?:it|the car) under its own power|can i drive|safe to drive|is it safe to drive|can the (?:vehicle|car) be driven|continue driving|क्या.{0,30}(?:चलाकर ले जा|गाड़ी चला|वाहन चला|ड्राइव)|(?:चलाकर ले जा|गाड़ी चला|वाहन चला).{0,30}सुरक्षित|सुरक्षित.{0,30}(?:चलाना|गाड़ी चलाना)|ба қувваи худ|ҳаракатро идома|бо қувваи худ|бехатар.{0,30}рон|o'z yurishi bilan|o'z kuchi bilan|o'z yurishida|haydash mumkin|harakatni davom|xavfsiz.{0,30}haydash)/iu.test(normalized);
+}
+
+export function roadworthinessAnswer(language = "ru") {
+  return ({
+    ru: "По имеющимся данным нельзя определить, можно ли перегонять автомобиль своим ходом. Допуск к движению оценивает механик после осмотра; этот ответ не подтверждает безопасность движения.",
+    en: "The available information is not enough to determine whether the vehicle can be moved under its own power. A mechanic must assess whether it may be driven after inspecting it; this answer does not establish that driving is safe.",
+    hi: "उपलब्ध जानकारी से यह तय नहीं किया जा सकता कि वाहन को अपनी शक्ति से ले जाना सुरक्षित है या नहीं। चलाने की अनुमति का आकलन निरीक्षण के बाद मैकेनिक करेगा; यह उत्तर वाहन की सुरक्षा की पुष्टि नहीं करता।",
+    tg: "Маълумоти мавҷуд барои муайян кардани он ки мошинро бо қувваи худ бурдан мумкин аст ё не, кофӣ нест. Иҷозати ҳаракатро механик баъди азназаргузаронӣ арзёбӣ мекунад; ин ҷавоб бехатарии ҳаракатро тасдиқ намекунад.",
+    uz: "Mavjud ma’lumotlar avtomobilni o‘z yurishi bilan olib borish mumkinligini aniqlash uchun yetarli emas. Harakatga ruxsatni mexanik ko‘rikdan keyin baholaydi; bu javob harakat xavfsizligini tasdiqlamaydi.",
+  })[language] || "По имеющимся данным нельзя определить, можно ли перегонять автомобиль своим ходом. Допуск к движению оценивает механик после осмотра; этот ответ не подтверждает безопасность движения.";
+}
+
 export function yamzMainBearingTorqueAssessment(pages, language = "ru") {
   const relevant = pages.filter(({ manual, text }) => {
     const searchable = text.replace(/[-‐‑]\s*\n\s*/gu, "").replace(/\s+/gu, " ");
@@ -57,7 +72,7 @@ export function yamzMainBearingTorqueAssessment(pages, language = "ru") {
 // The model selects source lines. All displayed words and numbers come from the indexed PDF.
 export async function answerFromManuals({ pages, engineModel, fault, query, previousQuestion = "", retrievalQuery = [query, previousQuestion].filter(Boolean).join(" "), language = "ru", fetchImpl = fetch }) {
   // A repair excerpt alone cannot establish roadworthiness for this vehicle.
-  if (/(?:своим ходом|перег(?:нать|он)|можно ли (?:ехать|доехать)|продолж(?:ить|ать) движение)/iu.test(query)) return { results: [] };
+  if (isRoadworthinessQuestion(query)) return { answer: roadworthinessAnswer(language), results: [] };
   if (isValveTimingQuestion(engineModel, retrievalQuery)) return valveTimingAssessment(pages, language);
   if (isYamzMainBearingTorqueQuestion(engineModel, retrievalQuery)) {
     const assessment = yamzMainBearingTorqueAssessment(pages, language);

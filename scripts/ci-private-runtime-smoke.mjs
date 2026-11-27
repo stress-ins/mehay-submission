@@ -47,10 +47,25 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   if (!healthy) throw new Error("synthetic runtime smoke did not become healthy");
-  const rendered = spawnSync("docker", ["exec", container, "node", "-e",
-    "(async()=>{const base='http://127.0.0.1:3087/mehay/api';const login=await fetch(base+'/auth/setup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'smoke-admin',displayName:'Synthetic Smoke',password:'synthetic-smoke-password'})});const cookie=login.headers.get('set-cookie')?.split(';',1)[0];if(login.status!==201||!cookie)process.exit(1);const r=await fetch(base+'/manuals/manual-1/pages/1.png',{headers:{cookie}});const b=Buffer.from(await r.arrayBuffer());process.exit(r.status===200&&r.headers.get('content-type')?.includes('image/png')&&b.length>100&&b.subarray(0,8).toString('hex')==='89504e470d0a1a0a'?0:1)})().catch(()=>process.exit(1))"],
-  { stdio: "ignore" });
-  if (rendered.status !== 0) throw new Error("synthetic cited PDF page did not render");
+  async function verifyPage() {
+    const origin = "http://127.0.0.1:3087";
+    const api = origin + "/mehay/api";
+    const setup = await fetch(api + "/auth/setup", {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify({ username: "smoke-admin", displayName: "Synthetic Smoke", password: "synthetic-smoke-password" }),
+    });
+    const cookie = setup.headers.get("set-cookie")?.split(";", 1)[0];
+    if (setup.status !== 201 || !cookie) throw new Error("Synthetic account setup failed: HTTP " + setup.status);
+    const page = await fetch(api + "/manuals/manual-1/pages/1.png", { headers: { cookie } });
+    const bytes = Buffer.from(await page.arrayBuffer());
+    if (page.status !== 200 || !page.headers.get("content-type")?.includes("image/png") ||
+        bytes.length <= 100 || bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") {
+      throw new Error("Synthetic manual page failed to render: HTTP " + page.status);
+    }
+  }
+  const rendered = spawnSync("docker", ["exec", container, "node", "-e", `(${verifyPage})()`], { stdio: "inherit" });
+  if (rendered.error || rendered.status !== 0) throw new Error("Synthetic private runtime check failed");
 } finally {
   spawnSync("docker", ["rm", "--force", container], { stdio: "ignore" });
   await rm(directory, { recursive: true, force: true });

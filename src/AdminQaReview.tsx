@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSystemLanguage } from "./systemLanguage";
 
 type Api = <T>(url: string, init?: RequestInit) => Promise<T>;
 type Observation = {
@@ -14,8 +15,14 @@ const nextAction: Record<string, string> = {
   no_evidence: "Проверить, есть ли нужная процедура в загруженном руководстве. Уточнить двигатель, узел или условия вопроса, если данных недостаточно.",
   error: "Проверить этап и код ошибки в карточке ниже, затем повторить запрос после восстановления соответствующего маршрута.",
 };
+const nextActionEn: Record<string, string> = {
+  conflict: "Compare the cited pages and applicability conditions. If needed, clarify the procedure with the person who asked and update the source index.",
+  no_evidence: "Check whether the required procedure is in the uploaded manual. Clarify the engine, component, or question conditions if details are missing.",
+  error: "Check the stage and error code in the case below, then retry after the relevant route is restored.",
+};
 
 export default function AdminQaReview({ api }: { api: Api }) {
+  const language = useSystemLanguage();
   const [cases, setCases] = useState<ReviewCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -44,7 +51,7 @@ export default function AdminQaReview({ api }: { api: Api }) {
         <p><strong>Машина:</strong> {[last.vehicle_id, last.vehicle_model, last.engine].filter(Boolean).join(" · ") || "не указана"} <strong>Сессия:</strong> {last.session_id || "не указана"}</p>
         <p><strong>Что произошло:</strong> {last.action}; этап {last.surface}; маршрут {last.route_decision || "не выбран"}; инструмент {last.tool || "не выбран"}; исход {last.outcome}{last.error_code ? ` (${last.error_code})` : ""}; {last.duration_ms} мс.</p>
         {last.source_refs.length > 0 && <p><strong>Источники:</strong> {last.source_refs.map((source, index) => <span key={`${source.manual}-${source.page}`}>{index > 0 ? ", " : ""}{source.manual}, стр. {source.page}</span>)}</p>}
-        <p><strong>Следующий шаг:</strong> {nextAction[item.category] || nextAction.error}</p>
+        <p><strong>{language === "en" ? "Next step:" : "Следующий шаг:"}</strong> {language === "en" ? nextActionEn[item.category] || nextActionEn.error : nextAction[item.category] || nextAction.error}</p>
         {item.events.length > 1 && <details><summary>Хронология ({item.events.length})</summary><ol>{item.events.map((event) => <li key={event.id}>{new Date(event.created_at).toLocaleString()} · {event.surface}: {event.action} → {event.outcome}{event.error_code ? ` (${event.error_code})` : ""}, {event.duration_ms} мс</li>)}</ol></details>}
         {item.status === "open" && <button className="button secondary" onClick={() => void markReviewed(item.id)}>Отметить проверенным</button>}
       </article>;

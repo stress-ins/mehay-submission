@@ -5,6 +5,15 @@ import type { MechanicLanguageCode } from "./neuroVoiceIntents";
 
 // Shared interface vocabulary: business values and user-entered content are never rewritten.
 const translations: Record<string, Partial<Record<MechanicLanguageCode, string>>> = {
+  "Доступ механиков к машинам": { en: "Mechanic access to vehicles" },
+  "Назначенные механики могут читать историю вопросов и ответов по выбранной машине.": { en: "Assigned mechanics can read the question and answer history for the selected vehicle." },
+  "Машина": { en: "Vehicle" },
+  "Назначенные механики": { en: "Assigned mechanics" },
+  "Нет активных учётных записей механиков.": { en: "There are no active mechanic accounts." },
+  "Сохранить назначения": { en: "Save assignments" },
+  "Назначения сохранены.": { en: "Assignments saved." },
+  "Сохраняем…": { en: "Saving…" },
+  "Загружаем…": { en: "Loading…" },
   "Не удалось сравнить предложения.": { en: "Could not compare offers.", hi: "ऑफ़र की तुलना नहीं हो सकी।", tg: "Муқоисаи пешниҳодҳо муяссар нашуд.", uz: "Takliflarni taqqoslab bo‘lmadi." },
   "Обзор": { en: "Overview", hi: "अवलोकन", tg: "Шарҳ", uz: "Umumiy ko‘rinish" },
   "Автопарк": { en: "Fleet", hi: "वाहन बेड़ा", tg: "Парк", uz: "Avtopark" },

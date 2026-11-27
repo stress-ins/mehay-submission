@@ -1373,6 +1373,42 @@ export function createApp({
   });
   const exactKeys = (value, allowed) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((key) => allowed.includes(key));
   const userResponse = (row) => publicUser(row);
+  const vehicleAssignments = "/api/neuro/vehicles/:vehicleId/assignments";
+  app.get(vehicleAssignments, (req, res) => {
+    res.set("Cache-Control", "no-store");
+    if (!recheckAdmin(req, res)) return;
+    if (!db.prepare("SELECT 1 FROM vehicles WHERE id=?").get(req.params.vehicleId)) return fail(res, 404, "vehicle_not_found");
+    const assignments = db.prepare(`SELECT u.id AS userId,u.username AS login,u.display_name AS displayName,u.active
+      FROM neuro_vehicle_assignments a JOIN users u ON u.id=a.user_id WHERE a.vehicle=? ORDER BY u.username`).all(req.params.vehicleId)
+      .map(row => ({ ...row, active: Boolean(row.active) }));
+    return res.json({ assignments });
+  });
+  app.put(vehicleAssignments, (req, res) => {
+    res.set("Cache-Control", "no-store");
+    if (!recheckAdmin(req, res)) return;
+    const { userIds } = req.body || {};
+    if (!exactKeys(req.body, ["userIds"]) || !Array.isArray(userIds) || userIds.length > 500 || userIds.some(id => typeof id !== "string" || !id) || new Set(userIds).size !== userIds.length) return fail(res, 400, "invalid_assignments");
+    if (!db.prepare("SELECT 1 FROM vehicles WHERE id=?").get(req.params.vehicleId)) return fail(res, 404, "vehicle_not_found");
+    const mechanics = userIds.length ? db.prepare(`SELECT id FROM users WHERE role='mechanic' AND active=1 AND id IN (${userIds.map(() => "?").join(",")})`).all(...userIds).map(row => row.id) : [];
+    if (mechanics.length !== userIds.length) return fail(res, 400, "invalid_assignment_user");
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      if (!recheckAdmin(req, res)) { db.exec("ROLLBACK"); return; }
+      db.prepare("DELETE FROM neuro_vehicle_assignments WHERE vehicle=?").run(req.params.vehicleId);
+      const insert = db.prepare("INSERT INTO neuro_vehicle_assignments(vehicle,user_id,assigned_at) VALUES(?,?,?)");
+      const now = new Date().toISOString();
+      for (const userId of mechanics) {
+        insert.run(req.params.vehicleId, userId, now);
+        // Existing exchanges become team history when their author is assigned.
+        db.prepare("UPDATE neuro_conversation SET team_visible=1 WHERE vehicle=? AND owner=?").run(req.params.vehicleId, userId);
+      }
+      recordAdminEvent(req.user.id, req.params.vehicleId, "vehicle_mechanics_assigned", { userIds: mechanics });
+      db.exec("COMMIT");
+    } catch (error) { db.exec("ROLLBACK"); throw error; }
+    const assignments = db.prepare(`SELECT u.id AS userId,u.username AS login,u.display_name AS displayName,u.active
+      FROM neuro_vehicle_assignments a JOIN users u ON u.id=a.user_id WHERE a.vehicle=? ORDER BY u.username`).all(req.params.vehicleId).map(row => ({ ...row, active: Boolean(row.active) }));
+    return res.json({ assignments });
+  });
   app.get("/api/admin/users", (req, res) => {
     res.set("Cache-Control", "no-store");
     if (!adminOnly(req, res)) return;

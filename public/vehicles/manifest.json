@@ -1,0 +1,21 @@
+[
+  {"id":"van-1","url":"/vehicles/van-1.jpg","color":"Белый","credit":"Elise240SX","sourceUrl":"https://commons.wikimedia.org/wiki/File:2020_Ford_Transit_350_XLT_Passenger_Van_in_Oxford_White,_Front_Right,_05-21-2022.jpg","license":"CC BY-SA 4.0"},
+  {"id":"van-2","url":"/vehicles/van-2.jpg","color":"Белый","credit":"EurovisionNim","sourceUrl":"https://commons.wikimedia.org/wiki/File:2015_Mercedes-Benz_Sprinter_(W_906)_313_CDI_MWB_van_(2015-08-29).jpg","license":"CC BY-SA 4.0"},
+  {"id":"van-3","url":"/vehicles/van-3.jpg","color":"Белый","credit":"ГП","sourceUrl":"https://commons.wikimedia.org/wiki/File:VW-Crafter.jpg","license":"CC BY-SA 4.0"},
+  {"id":"van-4","url":"/vehicles/van-4.jpg","color":"Белый","credit":"KGC626","sourceUrl":"https://commons.wikimedia.org/wiki/File:2017_GAZ_Gazelle_Next_2.8D_Long_Cab_Napred.jpg","license":"CC BY-SA 4.0"},
+  {"id":"van-5","url":"/vehicles/van-5.jpg","color":"Белый","credit":"Damian B Oh","sourceUrl":"https://commons.wikimedia.org/wiki/File:Fiat_Ducato_II_Bianco_(1).jpg","license":"CC BY-SA 4.0"},
+  {"id":"van-6","url":"/vehicles/van-6.jpg","color":"Белый","credit":"Ominae","sourceUrl":"https://commons.wikimedia.org/wiki/File:Renault_Master_Van_in_Munich.jpg","license":"CC BY-SA 4.0"},
+  {"id":"van-7","url":"/vehicles/van-7.jpg","color":"Белый","credit":"Cutlass","sourceUrl":"https://commons.wikimedia.org/wiki/File:2023_Peugeot_Boxer,_front_left,_06-05-2025.jpg","license":"CC0"},
+  {"id":"van-8","url":"/vehicles/van-8.jpg","color":"Белый","credit":"Vauxford","sourceUrl":"https://commons.wikimedia.org/wiki/File:2014_Iveco_Daily_35_S13_MWB_2.3.jpg","license":"CC BY-SA 4.0"},
+  {"id":"van-9","url":"/vehicles/jumper.jpg","credit":"RL GNZLZ","sourceUrl":"https://commons.wikimedia.org/wiki/File:Citroen_Jumper_Cargo_2018_(53962167195).jpg","license":"CC BY-SA 2.0"},
+  {"id":"van-10","url":"/vehicles/movano.jpg","credit":"Alexander Migl","sourceUrl":"https://commons.wikimedia.org/wiki/File:Opel_Movano_C_1X7A7323.jpg","license":"CC BY-SA 4.0"},
+  {"id":"van-11","url":"/vehicles/toyota.jpg","credit":"Alexander Migl","sourceUrl":"https://commons.wikimedia.org/wiki/File:Toyota_ProAce_Max_IMG_5831.jpg","license":"CC BY-SA 4.0"},
+  {"id":"maz5337","model":"МАЗ-5337","url":"/vehicles/maz5337.jpg","credit":"ShinePhantom","sourceUrl":"https://commons.wikimedia.org/wiki/File:MAZ-5337_in_TLT_-_4456.jpg","license":"CC BY-SA 3.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/3.0"},
+  {"id":"maz5551","model":"МАЗ-5551","url":"/vehicles/maz5551.jpg","credit":"Homoatrox","sourceUrl":"https://commons.wikimedia.org/wiki/File:MAZ-5551_dump_truck_in_Minsk.jpg","license":"CC BY-SA 3.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/3.0"},
+  {"id":"patriot","model":"УАЗ Патриот","url":"/vehicles/patriot.jpg","credit":"Dogs.barking.duster.rolling","sourceUrl":"https://commons.wikimedia.org/wiki/File:UAZ_Patriot_(1).jpg","license":"CC BY-SA 4.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0"},
+  {"id":"paz3205","model":"ПАЗ-3205","url":"/vehicles/paz3205.jpg","credit":"Sasha Krotov","sourceUrl":"https://commons.wikimedia.org/wiki/File:PAZ-3205_Arkhangelsk.jpg","license":"Public domain","licenseUrl":""},
+  {"id":"paz3206","model":"ПАЗ-3206","url":"/vehicles/paz3206.jpg","credit":"Druschba 4","sourceUrl":"https://commons.wikimedia.org/wiki/File:PAZ-3206.JPG","license":"CC BY-SA 4.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0"},
+  {"id":"ural4320","model":"Урал-4320","url":"/vehicles/ural4320.jpg","credit":"VargaA","sourceUrl":"https://commons.wikimedia.org/wiki/File:Ural-4320_1_Zakarpattya.jpg","license":"CC BY-SA 4.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0"},
+  {"id":"ural43206","model":"Урал-43206","url":"/vehicles/ural43206.jpg","credit":"Georg Pik","sourceUrl":"https://commons.wikimedia.org/wiki/File:Ural-43206,_Koryazhma.jpg","license":"CC0","licenseUrl":"http://creativecommons.org/publicdomain/zero/1.0/deed.en"},
+  {"id":"ural5557","model":"Урал-5557","url":"/vehicles/ural5557.jpg","credit":"Druschba 4","sourceUrl":"https://commons.wikimedia.org/wiki/File:Ural-5557_dump_truck.jpg","license":"CC BY-SA 4.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0"}
+]

@@ -1,0 +1,52 @@
+.workshop-library { display: grid; gap: 1rem; }
+.workshop-library form { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+.workshop-library label { display: grid; gap: .35rem; min-width: 0; }
+.workshop-library label:nth-child(2) { flex: 1 1 18rem; }
+.workshop-library :is(select,input,button) { min-height: 44px; }
+.workshop-library button, .manual-shelf a, .neuro-dvs h2, .repair-insight>strong { display: flex; align-items: center; gap: .6rem; }
+.manual-shelf { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,21rem),1fr)); gap:.75rem; }
+.manual-shelf a { padding:1rem; color:inherit; border:1px solid var(--border,#829089); border-radius:.5rem; text-decoration:none; align-items:flex-start; }
+.manual-shelf svg { flex-shrink:0; }
+.manual-shelf span { flex:1; }
+.manual-shelf small { display:block; margin-top:.3rem; }
+.library-answer { white-space:pre-line; max-width:75ch; }
+.work-hours { display:flex; gap:1.5rem; margin:.6rem 0; }
+.work-hours dd { font-weight:700; margin:0; }
+.neuro-trend>summary { cursor:pointer; font-weight:650; padding:.5rem 0; }
+.voice-result { border-inline-start:4px solid #318475; padding:.75rem 1rem; white-space:pre-line; max-width:78ch; }
+.mechanic-voice__commands button { background:transparent; color:inherit; border:1px solid #87958e; border-radius:.6rem; min-height:44px; padding:.4rem .85rem; }
+
+.neuro-priority-list { display: grid; gap: .6rem; padding-left: 1.5rem; }
+.neuro-priority-list li { min-width: 0; }
+.neuro-priority-list button { width: 100%; min-height: 44px; display: grid; justify-items: start; gap: .35rem; padding: .7rem .8rem; text-align: left; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: .65rem; }
+.neuro-priority-list button:hover { border-color: var(--amber); }
+.neuro-priority-heading { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; }
+.neuro-priority-heading strong { font-size: 1rem; }
+.neuro-priority-status { font-weight: 700; }
+.neuro-priority-status--quarantine { color: var(--verdict-stop, #a42b27); }
+.neuro-priority-status--attention { color: var(--verdict-warning, #805300); }
+.neuro-priority-list small { color: var(--muted); }
+.neuro-priority-action { color: var(--link, #176b8a); font-weight: 650; }
+@media (max-width: 560px) {
+  .neuro-priority-list { padding-left: 1.1rem; }
+  .neuro-priority-list button { padding: .55rem .6rem; }
+  .neuro-priority-list small { overflow-wrap: anywhere; }
+}
+
+.neuro-result .diagnostic-verdict { color: var(--verdict-stop, #a42b27); }
+.neuro-result--normal .diagnostic-verdict { color: var(--verdict-normal, #15633f); }
+:is(.neuro-result--anomaly, .neuro-result--warning_confirmation_required) .diagnostic-verdict { color: var(--verdict-warning, #805300); }
+.shell[data-theme="dark"] { --verdict-stop: #ffada6; --verdict-normal: #89dbad; --verdict-warning: #ffd178; }
+
+.library-answer strong { display:flex; align-items:center; gap:.5rem; color:var(--verdict-warning,#805300); }
+.library-answer p { margin:.4rem 0; }
+.workshop-library details > summary { padding:.55rem 0; min-height:44px; cursor:pointer; }
+
+.vehicle-crew { margin: .5rem 0; }
+.vehicle-crew summary { cursor: pointer; padding: .65rem 0; font-weight: 600; }
+.vehicle-crew dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; }
+.vehicle-crew dt { font-size: .875rem; color: var(--muted); }
+.vehicle-crew dd { margin: .15rem 0; }
+.diagnosis-next { display: grid; gap: .1rem; margin: .6rem 0; }
+.diagnosis-background summary, .diagnosis-records summary { padding: .65rem 0; cursor: pointer; font-weight: 600; min-height: 44px; }
+.diagnosis-background, .diagnosis-records { max-width: 100%; }

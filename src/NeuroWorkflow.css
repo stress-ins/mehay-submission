@@ -1,0 +1,46 @@
+.neuro-workflow { display: grid; gap: 1rem; margin: 1rem 0; }
+.neuro-system-message, .neuro-step-plan, .neuro-chat-history { padding: 1rem; border: 1px solid var(--line, #cbd5e1); border-radius: .75rem; background: var(--paper, #fff); color: var(--ink, inherit); }
+.neuro-system-message { display: grid; gap: .35rem; border-left: 4px solid #2563eb; }
+.neuro-quick-nav { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
+.neuro-quick-nav button { min-height: 56px; padding: .75rem 1.25rem; border: 1px solid var(--line, #cbd5e1); border-radius: .65rem; background: var(--paper, #fff); color: var(--ink, #1f2937); font-size: 1rem; font-weight: 650; cursor: pointer; }
+.neuro-quick-nav button:hover, .neuro-quick-nav button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+@media (max-width: 600px) {
+  .neuro-quick-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+  .neuro-quick-nav button:only-child { grid-column: 1 / -1; }
+  .neuro-quick-nav button { min-height: 44px; padding: .45rem .5rem; line-height: 1.25; }
+}
+.neuro-step-plan h3, .neuro-chat-history h3 { margin: 0 0 .75rem; }
+.neuro-plan-view { display: block; }
+.neuro-plan-return { min-height: 44px; margin-bottom: .75rem; }
+.neuro-workflow--plan-only { margin: 0; }
+.neuro-workflow--plan-only .neuro-step-plan { padding: 0; border: 0; background: transparent; }
+.neuro-workflow--plan-only .neuro-step-plan h3 { margin-bottom: 1rem; }
+.neuro-evidence > a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 650; }
+.neuro-plan-modes, .neuro-step-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.neuro-step-plan button { min-height: 3.5rem; padding: .65rem 1rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: .5rem; font: inherit; cursor: pointer; }
+.neuro-plan-modes [aria-pressed="true"], .neuro-step-actions button:first-child { background: var(--green-soft); font-weight: 600; }
+.neuro-step-plan button:focus-visible { outline: 2px solid #568976; outline-offset: 2px; }
+.neuro-step-plan button:disabled { cursor: default; opacity: .55; }
+.neuro-evidence { display: grid; justify-items: start; gap: .4rem; margin: .5rem 0; }
+.neuro-evidence img { display: block; width: min(100%, 900px); height: auto; margin-top: .5rem; border: 1px solid #cbd5e1; background: #fff; }
+.neuro-turn { padding: .75rem; margin-top: .65rem; border-radius: .5rem; background: var(--green-soft, #f4f6f8); color: var(--ink, #1f2937); }
+.neuro-turn p { margin: .35rem 0; white-space: pre-wrap; }
+
+.neuro-step-plan li { margin-block: .8rem; }
+
+.workshop-step-body { margin: 1rem 0 .65rem; }
+.workshop-step-body h4 { margin: 0 0 .3rem; font-family: inherit; font-size: 1.2rem; }
+.workshop-step-body p { margin: 0; max-width: 68ch; line-height: 1.55; }
+.workshop-step-body p strong { white-space: nowrap; }
+.neuro-step-actions button, .workshop-voice-actions button { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; }
+.workshop-voice-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.workshop-voice-note { padding: .6rem .8rem; border-inline-start: 3px solid var(--ink); }
+.workshop-values { margin-block: .75rem; }
+.workshop-values summary { cursor: pointer; font-weight: 600; }
+.workshop-values button { display: block; margin-top: .35rem; text-align: start; }
+
+@media (max-width: 600px) {
+  .workshop-voice-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workshop-voice-actions button { padding-inline: .4rem; line-height: 1.2; }
+  .workshop-voice-actions svg { flex-shrink: 0; }
+}

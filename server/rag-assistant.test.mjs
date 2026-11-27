@@ -59,6 +59,34 @@ test("manual retrieval is keyless, engine-scoped, cited by PDF page, and protect
   assert.equal(pdf.status, 404, "a synthetic citation cannot access an unconfigured knowledge base");
 });
 
+test("shared conversation marks only answers retrieved by the server for this vehicle and session", async t => {
+  const page = { manual: { id: "sample-guide", title: "Synthetic guide" }, pdfPage: 4, text: "Учебный регламент предусматривает проверку до контрольного порога.", valveTiming: { direction: "before", minutes: 21 }, score: 2.4 };
+  const { request } = await fixture(t, async () => [page]);
+  const post = (url, body) => request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const search = { engineModel: "ЯМЗ-236М2", vehicleId: "SYNTH-001", sessionId: "SYNTH-SESSION-0003", query: "Когда регулировать клапаны на ЯМЗ-236?", answer: true, saveConversation: true };
+  const conversation = "/api/neuro/vehicles/SYNTH-001/sessions/SYNTH-SESSION-0003/conversation";
+  for (const change of [{ saveConversation: false }, { engineModel: "ЯМЗ-536" }, { sessionId: "SYNTH-UNKNOWN-0000" }]) {
+    const result = await post("/api/manuals/search", { ...search, ...change });
+    assert.equal(result.status, 200);
+    assert.equal((await result.json()).exchangeId, undefined);
+  }
+  const result = await post("/api/manuals/search", search);
+  assert.equal(result.status, 200);
+  const { exchangeId, answer, results } = await result.json();
+  assert.ok(exchangeId);
+  const citation = { manual: page.manual.title, text: page.text, pdfPage: page.pdfPage, url: results[0].url };
+  const note = { id: "a8bbcaed-e772-49b0-ac6d-b5055388df52", question: search.query, answer: "Запись механика", evidence: [citation], manualVerified: true };
+  assert.equal((await post(conversation, note)).status, 201);
+  const { exchanges } = await (await request(conversation)).json();
+  assert.equal(exchanges.length, 2);
+  assert.equal(exchanges[0].id, exchangeId);
+  assert.equal(exchanges[0].answer, answer || page.text);
+  assert.equal(exchanges[0].manualVerified, true);
+  assert.deepEqual(exchanges[0].evidence, [citation]);
+  assert.equal(exchanges[1].manualVerified, false);
+  assert.deepEqual(exchanges[1].evidence, []);
+});
+
 test("admin review queue records unresolved manual requests once without storing answers or source text", async (t) => {
   const { raw, request, app } = await fixture(t, async () => []);
   const body = { engineModel: "ЯМЗ-536", query: "Нужна процедура для конкретного узла", answer: true, vehicleId: "van-4", sessionId: "session-77" };

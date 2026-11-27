@@ -1272,7 +1272,7 @@ export function createApp({
     });
     next();
   });
-  mountNeuroDvs(app, { db, manualSearch });
+  const recordManualAnswer = mountNeuroDvs(app, { db, manualSearch });
   const renderManualPage = createManualPageRenderer({
     manualById,
     getManuals,
@@ -1334,10 +1334,14 @@ export function createApp({
     const { results, answerUnavailable, manualAssessment } = assessment;
     const translation = translate && !manualAssessment && results.length ? await translateManualText(results[0].text, language) : null;
     const answer = assessment.answer || (translation ? `PDF · ${results[0].pdfPage}\n${translation}` : null);
-    return res.json({ ...(answer ? { answer } : {}), ...(manualAssessment ? { manualAssessment } : {}), ...(answerUnavailable ? { answerUnavailable: true } : {}), results: results.map((chunk) => ({
+    const citations = results.map((chunk) => ({
       manual: { id: chunk.manual.id, title: chunk.manual.title }, pdfPage: chunk.pdfPage, text: chunk.text, score: chunk.score,
       url: `/api/manuals/${encodeURIComponent(chunk.manual.id)}.pdf#page=${chunk.pdfPage}`,
-    })) });
+    }));
+    const exchangeId = answerMode && req.body.saveConversation === true
+      ? recordManualAnswer(req.user?.id, req.body, answer || citations[0]?.text, citations)
+      : null;
+    return res.json({ ...(exchangeId ? { exchangeId } : {}), ...(answer ? { answer } : {}), ...(manualAssessment ? { manualAssessment } : {}), ...(answerUnavailable ? { answerUnavailable: true } : {}), results: citations });
   });
   const adminOnly = (req, res) => req.user?.role === "admin" || (fail(res, 403, "admin_required"), false);
   const recheckAdmin = (req, res) => {
@@ -1374,26 +1378,34 @@ export function createApp({
   const exactKeys = (value, allowed) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((key) => allowed.includes(key));
   const userResponse = (row) => publicUser(row);
   const vehicleAssignments = "/api/neuro/vehicles/:vehicleId/assignments";
+  const listActiveMechanicAssignments = db.prepare(`SELECT u.id AS userId,u.username AS login,u.display_name AS displayName,u.active
+    FROM neuro_vehicle_assignments a JOIN users u ON u.id=a.user_id
+    WHERE a.vehicle=? AND u.role='mechanic' AND u.active=1 ORDER BY u.username`);
   app.get(vehicleAssignments, (req, res) => {
     res.set("Cache-Control", "no-store");
     if (!recheckAdmin(req, res)) return;
     if (!db.prepare("SELECT 1 FROM vehicles WHERE id=?").get(req.params.vehicleId)) return fail(res, 404, "vehicle_not_found");
-    const assignments = db.prepare(`SELECT u.id AS userId,u.username AS login,u.display_name AS displayName,u.active
-      FROM neuro_vehicle_assignments a JOIN users u ON u.id=a.user_id WHERE a.vehicle=? ORDER BY u.username`).all(req.params.vehicleId)
+    const assignments = listActiveMechanicAssignments.all(req.params.vehicleId)
       .map(row => ({ ...row, active: Boolean(row.active) }));
     return res.json({ assignments });
   });
   app.put(vehicleAssignments, (req, res) => {
     res.set("Cache-Control", "no-store");
     if (!recheckAdmin(req, res)) return;
-    const { userIds } = req.body || {};
-    if (!exactKeys(req.body, ["userIds"]) || !Array.isArray(userIds) || userIds.length > 500 || userIds.some(id => typeof id !== "string" || !id) || new Set(userIds).size !== userIds.length) return fail(res, 400, "invalid_assignments");
+    const { userIds, expectedUserIds } = req.body || {};
+    const validIds = ids => Array.isArray(ids) && ids.length <= 500 && ids.every(id => typeof id === "string" && id) && new Set(ids).size === ids.length;
+    if (!exactKeys(req.body, ["userIds", "expectedUserIds"]) || !validIds(userIds) || !validIds(expectedUserIds)) return fail(res, 400, "invalid_assignments");
     if (!db.prepare("SELECT 1 FROM vehicles WHERE id=?").get(req.params.vehicleId)) return fail(res, 404, "vehicle_not_found");
-    const mechanics = userIds.length ? db.prepare(`SELECT id FROM users WHERE role='mechanic' AND active=1 AND id IN (${userIds.map(() => "?").join(",")})`).all(...userIds).map(row => row.id) : [];
-    if (mechanics.length !== userIds.length) return fail(res, 400, "invalid_assignment_user");
     db.exec("BEGIN IMMEDIATE");
     try {
       if (!recheckAdmin(req, res)) { db.exec("ROLLBACK"); return; }
+      const currentUserIds = db.prepare(`SELECT a.user_id AS id FROM neuro_vehicle_assignments a JOIN users u ON u.id=a.user_id WHERE a.vehicle=? AND u.role='mechanic' AND u.active=1`).all(req.params.vehicleId).map(row => row.id);
+      if (currentUserIds.length !== expectedUserIds.length || currentUserIds.some(id => !expectedUserIds.includes(id))) {
+        db.exec("ROLLBACK");
+        return fail(res, 409, "assignment_conflict");
+      }
+      const mechanics = userIds.length ? db.prepare(`SELECT id FROM users WHERE role='mechanic' AND active=1 AND id IN (${userIds.map(() => "?").join(",")})`).all(...userIds).map(row => row.id) : [];
+      if (mechanics.length !== userIds.length) { db.exec("ROLLBACK"); return fail(res, 400, "invalid_assignment_user"); }
       db.prepare("DELETE FROM neuro_vehicle_assignments WHERE vehicle=?").run(req.params.vehicleId);
       const insert = db.prepare("INSERT INTO neuro_vehicle_assignments(vehicle,user_id,assigned_at) VALUES(?,?,?)");
       const now = new Date().toISOString();
@@ -1405,8 +1417,7 @@ export function createApp({
       recordAdminEvent(req.user.id, req.params.vehicleId, "vehicle_mechanics_assigned", { userIds: mechanics });
       db.exec("COMMIT");
     } catch (error) { db.exec("ROLLBACK"); throw error; }
-    const assignments = db.prepare(`SELECT u.id AS userId,u.username AS login,u.display_name AS displayName,u.active
-      FROM neuro_vehicle_assignments a JOIN users u ON u.id=a.user_id WHERE a.vehicle=? ORDER BY u.username`).all(req.params.vehicleId).map(row => ({ ...row, active: Boolean(row.active) }));
+    const assignments = listActiveMechanicAssignments.all(req.params.vehicleId).map(row => ({ ...row, active: Boolean(row.active) }));
     return res.json({ assignments });
   });
   app.get("/api/admin/users", (req, res) => {

@@ -1,11 +1,11 @@
 const ids = ["SYNTH-001", "SYNTH-002", "SYNTH-003", "SYNTH-004", "SYNTH-005", "SYNTH-006"];
 const namedSessions = new Map([
-  ["SYNTH-001", ["PUBCANDIDATECHECKC", "PUBCANDIDATECHECKD", "PUBCANDIDATECHECKE", "PUBCANDIDATECHECKB"]],
+  ["SYNTH-001", ["SYNTH-SESSION-0002", "SYNTH-SESSION-0003", "SYNTH-SESSION-0004", "SYNTH-SESSION-0001"]],
   ["SYNTH-002", ["FAIL-002", "FAIL-002-A", "FAIL-002-B", "FAIL-002-C"]],
-  ["SYNTH-003", ["PUBCANDIDATECHECKL", "PUBCANDIDATECHECKK", "PUBCANDIDATECHECKJ"]],
-  ["SYNTH-004", ["PUBCANDIDATECHECKI", "PUBCANDIDATECHECKF", "PUBCANDIDATECHECKH", "PUBCANDIDATECHECKG"]],
-  ["SYNTH-005", ["PUBCANDIDATECHECKP", "PUBCANDIDATECHECKO", "PUBCANDIDATECHECKN", "PUBCANDIDATECHECKM"]],
-  ["SYNTH-006", ["S-0204", "S-0203", "S-0202", "S-0201"]],
+  ["SYNTH-003", ["SYNTH-SESSION-0011", "SYNTH-SESSION-0010", "SYNTH-SESSION-0009"]],
+  ["SYNTH-004", ["SYNTH-SESSION-0008", "SYNTH-SESSION-0005", "SYNTH-SESSION-0007", "SYNTH-SESSION-0006"]],
+  ["SYNTH-005", ["SYNTH-SESSION-0015", "SYNTH-SESSION-0014", "SYNTH-SESSION-0013", "SYNTH-SESSION-0012"]],
+  ["SYNTH-006", ["SYNTH-SESSION-0019", "SYNTH-SESSION-0018", "SYNTH-SESSION-0017", "SYNTH-SESSION-0016"]],
 ]);
 
 const title = { F01: "Клапанный механизм", F08: "Топливоподача", F13: "Подача топлива" };
@@ -17,15 +17,16 @@ const vehicles = Array.from({ length: 50 }, (_, index) => {
     vehicle_id: vehicleId,
     make: "Тестовый производитель",
     model: "Учебный автомобиль",
-    engine_model: index === 2 || index === 5 ? "ЗМЗ-5234.10" : index === 6 ? "ЯМЗ-536" : "ЯМЗ-236М2",
+    engine_model: ["SYNTH-003", "SYNTH-006"].includes(vehicleId) ? "ЗМЗ-5234.10" : vehicleId === "SYNTH-007" ? "ЯМЗ-536" : "ЯМЗ-236М2",
     fuel,
-    vehicle_type: index === 2 ? "автобус" : "грузовик",
+    vehicle_type: vehicleId === "SYNTH-003" ? "автобус" : "грузовик",
+    ...(vehicleId === "SYNTH-006" ? { demo_repair_case: "late-f01" } : {}),
     garage_no: `TEST-${String(index + 1).padStart(3, "0")}`,
     sessions: sessions.map((sessionId, sessionIndex) => {
       const failed = vehicleId === "SYNTH-002" && sessionId === "FAIL-002";
-      const normal = (vehicleId === "SYNTH-001" && sessionId === "PUBCANDIDATECHECKC") || sessionIndex === 3;
+      const normal = (vehicleId === "SYNTH-001" && sessionId === "SYNTH-SESSION-0002") || sessionIndex === 3;
       const code = vehicleId === "SYNTH-003" || vehicleId === "SYNTH-006" ? "F01" :
-        sessionId === "PUBCANDIDATECHECKI" ? "F13" : sessionId === "PUBCANDIDATECHECKP" ? "F08" : fuel === "дизель" ? "F08" : "F13";
+        sessionId === "SYNTH-SESSION-0008" ? "F13" : sessionId === "SYNTH-SESSION-0015" ? "F08" : fuel === "дизель" ? "F08" : "F13";
       const status = failed ? "check_failed" : normal ? "normal" : "anomaly";
       return {
         vehicle_id: vehicleId,
@@ -34,8 +35,8 @@ const vehicles = Array.from({ length: 50 }, (_, index) => {
         status,
         anomaly_type: status === "anomaly" ? code : null,
         anomaly_title: status === "anomaly" ? title[code] : null,
-        anomaly_score: failed ? null : status === "normal" ? 0.05 : vehicleId === "SYNTH-003" && sessionId === "PUBCANDIDATECHECKL" ? 0.85 : 0.76,
-        confidence: failed ? null : vehicleId === "SYNTH-001" && sessionId === "PUBCANDIDATECHECKE" ? 0.42 : 0.73,
+        anomaly_score: failed ? null : status === "normal" ? 0.05 : vehicleId === "SYNTH-003" && sessionId === "SYNTH-SESSION-0011" ? 0.85 : 0.76,
+        confidence: failed ? null : vehicleId === "SYNTH-001" && sessionId === "SYNTH-SESSION-0004" ? 0.42 : 0.73,
         signal_quality: failed ? "bad" : "good",
         description: "Синтетический результат для автоматических проверок.",
         model_version: "synthetic-test-v1",

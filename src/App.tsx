@@ -18,6 +18,8 @@ import {
 } from "./BootstrapUI";
 import {
   Activity,
+  ArrowLeft,
+  Mic,
   AlertTriangle,
   Bus,
   BookOpen,
@@ -59,7 +61,7 @@ import { repairExample } from "./repairExample";
 import RepairExperience, { type RepairExperienceData } from "./RepairExperience";
 import PartOffers from "./PartOffers";
 import AdminQaReview from "./AdminQaReview";
-import NeuroWorkflow, { NeuroChatHistory, type NeuroChatTurn, type ManualEvidenceItem } from "./NeuroWorkflow";
+import NeuroWorkflow, { normalizeManualLineBreaks, NeuroChatHistory, type NeuroChatTurn, type ManualEvidenceItem } from "./NeuroWorkflow";
 import { selectNeuroTool } from "./neuroTools";
 import NeuroFleetOverview, { MeasurementTrend, type NeuroPriorityVehicle, type StoredHistory, type NeuroTrendSession } from "./NeuroFleetOverview";
 import Plate from "./Plate";
@@ -587,6 +589,7 @@ type NeuroDiagnosis = {
     message: string;
     recommendations: { operationKind?: "repair" | "inspection"; procedure?: ManualEvidenceItem[]; text: string; translations?: Partial<Record<"en" | "hi" | "tg" | "uz", string>>; excerpt?: string; stepKey?: string; manual: string; pdfPage: number; url: string }[];
     canCreateTicket: boolean;
+    canCreateDefectoscopyTicket?: boolean;
     ticketBlockReason?: string;
     urgency?: "low" | "medium" | "high";
     risk?: "low" | "medium" | "high";
@@ -678,8 +681,10 @@ function VehicleMeasurementSummary({ vehicleId }: { vehicleId: string }) {
     : <p role="status">{failed ? "Не удалось загрузить историю замеров." : "Загружаем историю замеров…"}</p>;
 }
 
-type NeuroExchange = { id: string; sessionId: string; question: string; answer: string; evidence: ManualEvidenceItem[]; author?: { userId: string; login: string; displayName: string } };
-function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHistorical, currentMechanic }: { routerConfigured: boolean; cardId: string; requestedSession: string; onProcureHistorical: (part: string) => void; currentMechanic: Pick<AuthUser, "id" | "username" | "displayName"> }) {
+type NeuroExchange = { manualVerified?: boolean; id: string; sessionId: string; question: string; answer: string; evidence: ManualEvidenceItem[]; author?: { userId: string; login: string; displayName: string } };
+type AssistantMode = "voice" | "question";
+
+function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssistant, routerConfigured, cardId, requestedSession, onProcureHistorical, currentMechanic }: { assistantHost: HTMLElement | null; assistantMode: AssistantMode | null; assistantOpenId: number; openAssistant: (mode: AssistantMode) => void; routerConfigured: boolean; cardId: string; requestedSession: string; onProcureHistorical: (part: string) => void; currentMechanic: Pick<AuthUser, "id" | "username" | "displayName"> }) {
   const [fleet, setFleet] = useState<NeuroFleetVehicle[]>([]);
   const [vehicleHistory, setVehicleHistory] = useState<StoredHistory | null>(null);
   const [vehicleHistoryError, setVehicleHistoryError] = useState("");
@@ -690,7 +695,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [ticketId, setTicketId] = useState("");
-  const [ticketPreview, setTicketPreview] = useState<{ previewToken: string; preview: { vehicleId: string; sessionId: string; engineModel: string; faultCode: string; confidence: { value: number | null; percent: number | null; threshold: number; thresholdPercent: number; label: string }; signalQuality: { value: string; label: string }; urgency: "low" | "medium" | "high"; urgencyMeaning: string; conclusion: string; operations: { text: string; manual: string; pdfPage: number }[]; historicalNote: string; spareParts: string[] } } | null>(null);
+  const [ticketPreview, setTicketPreview] = useState<{ previewToken: string; preview: { purpose?: "repair" | "defectoscopy"; vehicleId: string; sessionId: string; engineModel: string; faultCode: string; confidence: { value: number | null; percent: number | null; threshold: number; thresholdPercent: number; label: string }; signalQuality: { value: string; label: string }; urgency: "low" | "medium" | "high"; urgencyMeaning: string; conclusion: string; operations: { text: string; manual: string; pdfPage: number }[]; historicalNote: string; spareParts: string[] } } | null>(null);
   const [draftUrgency, setDraftUrgency] = useState<"low" | "medium" | "high">("medium");
   const [comparison, setComparison] = useState<{ context: string; part: string } | null>(null);
   const [historicalPart, setHistoricalPart] = useState("");
@@ -701,13 +706,26 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
   const [questionBusy, setQuestionBusy] = useState(false);
   const [voiceTicketPending, setVoiceTicketPending] = useState<VoiceTicketBinding<NeuroDiagnosis> | null>(null);
   const [conversation, setConversation] = useState<{ contextKey: string; status: "loading" | "ready" | "error"; exchanges: NeuroExchange[] } | null>(null);
+  const [conversationAuthorizationKey, setConversationAuthorizationKey] = useState("");
   const [pendingChatByContext, setPendingChatByContext] = useState<Record<string, NeuroExchange[]>>({});
   const conversationRead = useRef(0);
+  const currentAssistantWindow = useRef({ host: assistantHost, openId: assistantOpenId });
+  currentAssistantWindow.current = { host: assistantHost, openId: assistantOpenId };
+  const [voiceTicketPurpose, setVoiceTicketPurpose] = useState<"repair" | "defectoscopy">("repair");
   const [planStep, setPlanStep] = useState(0);
   const [planMode, setPlanMode] = useState(false);
+  const planReturnScrollY = useRef<number | null>(null);
+  const restorePlanScroll = useRef(false);
+  const diagnosisReturnScrollY = useRef<number | null>(null);
+  const capturePlanReturnOrigin = () => { planReturnScrollY.current = window.scrollY; };
   const [performedSteps, setPerformedSteps] = useState<number[]>([]);
   const voiceReplyPending = useRef(false);
   const [planListening, setPlanListening] = useState(false);
+  useEffect(() => {
+    setPlanListening(Boolean(assistantHost && assistantMode === "voice" && isSpeechRecognitionAvailable()));
+    if (assistantHost && assistantMode === "question") assistantHost.querySelector("textarea")?.focus({ preventScroll: true });
+  }, [assistantHost, assistantMode]);
+
   const [pageRequest, setPageRequest] = useState({ step: -1, sequence: 0 });
   const [stepNote, setStepNote] = useState("");
   const [voiceFeedback, setVoiceFeedback] = useState("");
@@ -747,7 +765,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
   const visibleExchanges = visibleConversation({ activeContext: contextKey, loadedContext: conversation?.contextKey || null, loadState: conversation?.status || "loading", serverSnapshot: conversation?.exchanges || [], pendingWrites: pendingChatByContext[contextKey] || [] });
   const chatTurns: NeuroChatTurn[] = visibleExchanges.flatMap(exchange => [
     { role: "mechanic", sessionId: exchange.sessionId, author: exchange.author ? `${exchange.author.displayName} (@${exchange.author.login})` : undefined, text: exchange.question, evidence: [] },
-    { role: "assistant", sessionId: exchange.sessionId, text: exchange.answer, evidence: exchange.evidence },
+    { role: "assistant", manualVerified: exchange.manualVerified === true, sessionId: exchange.sessionId, text: exchange.answer, evidence: exchange.evidence },
   ]);
   useEffect(() => {
     setConversationNotice("");
@@ -766,6 +784,26 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     });
     return () => { active = false; };
   }, [vehicleId, sessionId, contextKey, conversationPath]);
+
+  useEffect(() => {
+    if (!assistantHost || !assistantOpenId || !vehicleId || !sessionId) return;
+    let active = true;
+    const readId = ++conversationRead.current;
+    const authorizationKey = `${assistantOpenId}:${contextKey}`;
+    setConversation({ contextKey, status: "loading", exchanges: [] });
+    setConversationNotice("");
+    api<{ exchanges: NeuroExchange[] }>(conversationPath).then(({ exchanges }) => {
+      if (!active || conversationRead.current !== readId) return;
+      setConversation({ contextKey, status: "ready", exchanges });
+      setConversationAuthorizationKey(authorizationKey);
+    }).catch(() => {
+      if (active && conversationRead.current === readId) {
+        setConversation({ contextKey, status: "error", exchanges: [] });
+        setConversationNotice("Не удалось загрузить предыдущие вопросы по этой машине.");
+      }
+    });
+    return () => { active = false; };
+  }, [assistantHost, assistantOpenId, vehicleId, sessionId, contextKey, conversationPath]);
 
   useEffect(() => {
     let active = true;
@@ -824,22 +862,24 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     autoDiagnosed.current = key;
     void diagnose();
   }, [vehicleId, sessionId, currentVehicle, currentSession]);
-  function rememberExchange(question: string, answer: string, evidence: ManualEvidenceItem[] = []) {
-    const exchange = { id: crypto.randomUUID(), sessionId, question, answer, evidence, author: { userId: currentMechanic.id, login: currentMechanic.username, displayName: currentMechanic.displayName } };
+  function rememberExchange(question: string, answer: string, evidence: ManualEvidenceItem[] = [], savedId?: string) {
+    const exchange = { id: savedId || crypto.randomUUID(), manualVerified: Boolean(savedId), sessionId, question, answer, evidence: savedId ? evidence : [], author: { userId: currentMechanic.id, login: currentMechanic.username, displayName: currentMechanic.displayName } };
     setPendingChatByContext(history => ({ ...history, [contextKey]: [...(history[contextKey] || []), exchange].slice(-50) }));
-    void api(conversationPath, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(exchange) })
+    void (savedId ? Promise.resolve() : api(conversationPath, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(exchange) }))
       .then(() => {
         if (activeContext.current !== contextKey) return;
+        if (assistantHost && (currentAssistantWindow.current.host !== assistantHost || currentAssistantWindow.current.openId !== assistantOpenId)) return;
         const readId = ++conversationRead.current;
         setConversation({ contextKey, status: "loading", exchanges: [] });
         api<{ exchanges: NeuroExchange[] }>(conversationPath).then(({ exchanges }) => {
-          if (activeContext.current === contextKey && conversationRead.current === readId) {
+          if (activeContext.current === contextKey && conversationRead.current === readId && (!assistantHost || (currentAssistantWindow.current.host === assistantHost && currentAssistantWindow.current.openId === assistantOpenId))) {
             setConversation({ contextKey, status: "ready", exchanges });
+            if (assistantHost && assistantOpenId && currentAssistantWindow.current.host === assistantHost && currentAssistantWindow.current.openId === assistantOpenId) setConversationAuthorizationKey(`${assistantOpenId}:${contextKey}`);
             const ids = new Set(exchanges.map(item => item.id));
             setPendingChatByContext(current => ({ ...current, [contextKey]: (current[contextKey] || []).filter(item => !ids.has(item.id)) }));
           }
         }).catch(() => {
-          if (activeContext.current === contextKey && conversationRead.current === readId) {
+          if (activeContext.current === contextKey && conversationRead.current === readId && (!assistantHost || (currentAssistantWindow.current.host === assistantHost && currentAssistantWindow.current.openId === assistantOpenId))) {
             setConversation({ contextKey, status: "error", exchanges: [] });
             setConversationNotice("Не удалось загрузить предыдущие вопросы по этой машине.");
           }
@@ -850,8 +890,9 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
         if (activeContext.current === contextKey) setConversationNotice("Ответ показан. Сохранить его в истории замера не удалось.");
       });
   }
-  function speakVoiceReply(text: string, language = voiceLanguage) {
+  function speakVoiceReply(source: string, language = voiceLanguage) {
     if (!voiceReplyPending.current) return;
+    const text = normalizeManualLineBreaks(source);
     setVoiceFeedback(text);
     voiceReplyPending.current = false;
     if (typeof window === "undefined" || !window.speechSynthesis || typeof SpeechSynthesisUtterance === "undefined") return;
@@ -875,9 +916,11 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
       return;
     }
     if (tool === "ticket" || isTicketCommand(query, voiceLanguage)) {
-      if (!diagnosis?.guidance.canCreateTicket) {
-        setError("Для заявки ТОиР сначала нужен подтверждённый диагноз с рекомендациями из руководства.");
+      const purpose = /дефектовк/iu.test(query) ? "defectoscopy" : "repair";
+      if (purpose === "repair" ? !diagnosis?.guidance.canCreateTicket : !diagnosis?.guidance.canCreateDefectoscopyTicket) {
+        setError(purpose === "defectoscopy" ? "Для заявки на дефектовку нужна проверка из руководства для этого двигателя." : "Для заявки ТОиР сначала нужен подтверждённый диагноз с рекомендациями из руководства.");
       } else {
+        setVoiceTicketPurpose(purpose);
         setVoiceTicketPending(bindVoiceTicket(vehicleId, sessionId, diagnosis));
       }
       return;
@@ -887,7 +930,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     if (shouldRoute) {
       setQuestionBusy(true);
       try {
-        const routed = await api<{ tool: "manual" | "vehicle_history" | "history" | "ticket" | "diagnose" | "fallback" }>("/api/neuro/tool-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, vehicleId, sessionId, hasDiagnosis: Boolean(diagnosis), canCreateTicket: Boolean(diagnosis?.guidance.canCreateTicket), language: voiceLanguage }) });
+      const routed = await api<{ tool: "manual" | "vehicle_history" | "history" | "ticket" | "diagnose" | "fallback" }>("/api/neuro/tool-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, vehicleId, sessionId, hasDiagnosis: Boolean(diagnosis), canCreateTicket: Boolean(diagnosis?.guidance.canCreateTicket || diagnosis?.guidance.canCreateDefectoscopyTicket), language: voiceLanguage }) });
         if (!isCurrent()) return;
         routedTool = routed.tool;
       } catch { routedTool = "fallback"; }
@@ -896,8 +939,9 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     if (routedTool === "diagnose") { setQuestionBusy(false); setAnswers(null); setAnswerText(""); setAnswerUnavailable(false); await diagnose(); return; }
     if (routedTool === "ticket") {
       setQuestionBusy(false);
-      if (!diagnosis?.guidance.canCreateTicket) setError("Для заявки ТОиР нужен подтверждённый диагноз с рекомендациями из руководства.");
-      else setVoiceTicketPending(bindVoiceTicket(vehicleId, sessionId, diagnosis));
+      const purpose = /дефектовк/iu.test(query) ? "defectoscopy" : "repair";
+      if (purpose === "repair" ? !diagnosis?.guidance.canCreateTicket : !diagnosis?.guidance.canCreateDefectoscopyTicket) setError("Для выбранного типа заявки нет подтверждённой операции из руководства.");
+      else { setVoiceTicketPurpose(purpose); setVoiceTicketPending(bindVoiceTicket(vehicleId, sessionId, diagnosis)); }
       return;
     }
     if (routedTool === "vehicle_history") {
@@ -963,29 +1007,30 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     setQuestionBusy(true); setError(""); setAnswers(null); setAnswerText(""); setAnswerUnavailable(false);
     try {
       const previousQuestion = [...chatTurns].reverse().find((turn) => turn.role === "mechanic" && turn.sessionId === sessionId)?.text;
-      const result = await api<{ answer?: string; answerUnavailable?: boolean; results: { text: string; manual: { title: string }; pdfPage: number; url: string }[] }>("/api/manuals/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ engineModel: currentVehicle.engine_model, query, answer: true, language: voiceLanguage, ...(previousQuestion ? { previousQuestion } : {}), vehicleId, vehicleModel: currentVehicle.model, sessionId, fault: diagnosis?.guidance.status === "anomaly" ? String(rawDiagnosis.anomaly_title || "") : "" }) });
+      const result = await api<{ exchangeId?: string; answer?: string; answerUnavailable?: boolean; results: { text: string; manual: { title: string }; pdfPage: number; url: string }[] }>("/api/manuals/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ engineModel: currentVehicle.engine_model, query, answer: true, saveConversation: true, language: voiceLanguage, ...(previousQuestion ? { previousQuestion } : {}), vehicleId, vehicleModel: currentVehicle.model, sessionId, fault: diagnosis?.guidance.status === "anomaly" ? String(rawDiagnosis.anomaly_title || "") : "" }) });
       if (!isCurrent()) return;
       const evidence: ManualEvidenceItem[] = result.results.map((item) => ({ text: item.text, manual: item.manual.title, pdfPage: item.pdfPage, url: item.url }));
       setAnswers(evidence);
       setAnswerText(result.answer || evidence[0]?.text || "");
       setAnswerUnavailable(Boolean(result.answerUnavailable));
       const reply = result.answer || evidence[0]?.text || (result.answerUnavailable ? "Не удалось подготовить ответ по источникам." : "Данных в руководствах недостаточно для ответа.");
-      rememberExchange(query, reply, evidence);
+      rememberExchange(query, reply, evidence, result.exchangeId);
       if (result.answer || evidence.length) speakVoiceReply(reply);
       else voiceReplyPending.current = false;
     } catch (cause) { if (!isCurrent()) return; voiceReplyPending.current = false; setError(cause instanceof Error ? cause.message : "Поиск по руководствам не выполнен"); }
     finally { if (isCurrent()) setQuestionBusy(false); }
   }
   async function askManual(e: React.FormEvent) { e.preventDefault(); await askManualText(question); }
-  async function prepareTicket() {
+  async function prepareTicket(purpose: "repair" | "defectoscopy" = "repair") {
     setVoiceTicketPending(null);
     if (!diagnosis || !currentVehicle || !currentSession) return;
-    if (!diagnosis.guidance.canCreateTicket) { setError("Для заявки требуется подтверждённое качество и основание из руководства."); return; }
+    if (purpose === "repair" ? !diagnosis.guidance.canCreateTicket : !diagnosis.guidance.canCreateDefectoscopyTicket) { setError("Для выбранного типа заявки требуется подтверждённое основание из руководства."); return; }
     const run = ++diagnosisRun.current;
     const isCurrent = () => run === diagnosisRun.current && activeContext.current === contextKey;
     setBusy(true); setError("");
     try {
-      const result = await api<{ previewToken: string; preview: NonNullable<typeof ticketPreview>["preview"] }>("/api/neuro/tickets/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicleId, sessionId, urgency: draftUrgency, operations: diagnosis.guidance.recommendations.filter(item => item.operationKind === "repair").map((item) => item.text), ...(historicalPart ? { historicalPart } : {}) }) });
+      const operations = diagnosis.guidance.recommendations.filter(item => purpose === "repair" ? item.operationKind === "repair" : item.operationKind === "inspection").map((item) => item.text);
+      const result = await api<{ previewToken: string; preview: NonNullable<typeof ticketPreview>["preview"] }>("/api/neuro/tickets/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicleId, sessionId, urgency: draftUrgency, operations, purpose, ...(purpose === "repair" && historicalPart ? { historicalPart } : {}) }) });
       if (isCurrent()) setTicketPreview(result);
     } catch (cause) { if (isCurrent()) setError(cause instanceof Error ? cause.message : "Не удалось подготовить просмотр заявки ТОиР"); }
     finally { if (isCurrent()) setBusy(false); }
@@ -1045,10 +1090,11 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
 
   const quickNavigation = (
     <nav className="neuro-quick-nav" aria-label={ui("Быстрая навигация")}>
-      {!!guidance?.recommendations.length && <button type="button" onClick={() => {
+      {!!guidance?.recommendations.length && <button type="button" onPointerDown={capturePlanReturnOrigin} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") capturePlanReturnOrigin(); }} onClick={() => {
+        if (planReturnScrollY.current === null) capturePlanReturnOrigin();
         setPlanMode(true);
       }}><ClipboardCheck size={16} aria-hidden="true" />{ui("К плану работ")}</button>}
-      <button type="button" onClick={() => { const field = document.querySelector<HTMLTextAreaElement>(".neuro-qa textarea"); field?.scrollIntoView({ behavior: "smooth", block: "center" }); field?.focus(); }}><MessageSquareText size={16} aria-hidden="true" />{ui("Задать вопрос")}</button>
+      <button type="button" onClick={() => openAssistant("question")}><MessageSquareText size={16} aria-hidden="true" />{ui("Задать вопрос")}</button>
     </nav>
   );
   const workflowRecommendations = (diagnosis?.guidance.recommendations.flatMap((item): ManualEvidenceItem[] => item.procedure?.length ? item.procedure : [item]) || []).map(item => {
@@ -1059,21 +1105,54 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     const items = diagnosis?.guidance.recommendations || [];
     const index = items.slice(0, recommendationIndex).reduce((total, item) => total + (item.procedure?.length || 1), 0);
     setPlanStep(Math.min(index, Math.max(0, workflowRecommendations.length - 1)));
+    capturePlanReturnOrigin();
     setPlanMode(true);
   };
+  const returnToDiagnosis = () => {
+    restorePlanScroll.current = planReturnScrollY.current !== null;
+    setPlanMode(false);
+  };
+  useEffect(() => {
+    if (planMode || !restorePlanScroll.current) return;
+    restorePlanScroll.current = false;
+    const scrollY = planReturnScrollY.current;
+    planReturnScrollY.current = null;
+    if (scrollY !== null) window.setTimeout(() => {
+      if (scrollY > 0) window.scrollTo(0, scrollY);
+      else document.querySelector(".neuro-dvs")?.scrollIntoView({ block: "start" });
+    }, 0);
+  }, [planMode]);
+  useEffect(() => {
+    if (!diagnosis || diagnosisReturnScrollY.current === null) return;
+    const scrollY = diagnosisReturnScrollY.current;
+    diagnosisReturnScrollY.current = null;
+    window.setTimeout(() => {
+      if (scrollY > 0) window.scrollTo(0, scrollY);
+      else document.querySelector(".neuro-dvs")?.scrollIntoView({ block: "start" });
+    }, 0);
+  }, [diagnosis]);
+  const defectoscopyPreview = ticketPreview?.preview.purpose === "defectoscopy" && <section className="neuro-ticket-preview" aria-label={ui("Просмотр заявки на дефектовку")}><h3>{ui("Заявка на дефектовку · проверьте перед передачей в ТОиР")}</h3><p>{ticketPreview.preview.vehicleId} · {ticketPreview.preview.sessionId} · {ticketPreview.preview.engineModel}</p><p>{ticketPreview.preview.conclusion}</p><h4>{ui("Проверки и основания из руководства")}</h4><ul>{ticketPreview.preview.operations.map((item, index) => <li key={index}>{item.text} — {item.manual}, стр. {item.pdfPage}</li>)}</ul><p>{ui("Запчасти: не указаны. Ремонтные операции не включены.")}</p><PButton type="button" variant="primary" disabled={busy || !!ticketId || ticketPreview.preview.vehicleId !== vehicleId || ticketPreview.preview.sessionId !== sessionId} onClick={() => void confirmTicket()}>{ui("Подтвердить и передать в ТОиР")}</PButton> <PButton type="button" variant="secondary" disabled={busy} onClick={() => setTicketPreview(null)}>{ui("Отменить просмотр")}</PButton></section>;
+  const repairTicketPreview = ticketPreview && ticketPreview.preview.purpose !== "defectoscopy" && <section className="neuro-ticket-preview" style={{ flex: "1 1 100%", width: "100%", minWidth: 0, boxSizing: "border-box" }} aria-label={ui("Проверка заявки перед отправкой")} tabIndex={assistantHost ? -1 : undefined}><h3>{ui("Проверьте заявку перед передачей в ТОиР")}</h3><dl><div><dt>{ui("Машина / сессия")}</dt><dd>{ticketPreview.preview.vehicleId} · {ticketPreview.preview.sessionId}</dd></div><div><dt>{ui("Двигатель / код")}</dt><dd>{ticketPreview.preview.engineModel} · {ticketPreview.preview.faultCode}</dd></div><div><dt>{ui("Уверенность / качество")}</dt><dd>{ticketPreview.preview.confidence.percent === null ? ui("не определена") : `${ticketPreview.preview.confidence.percent}%`} (порог {ticketPreview.preview.confidence.thresholdPercent}%) · {ui(ticketPreview.preview.signalQuality.label)}</dd></div><div><dt>{ui("Приоритет")}</dt><dd>{ticketPreview.preview.urgencyMeaning}</dd></div><div><dt>{ui("Заключение")}</dt><dd>{ticketPreview.preview.conclusion}</dd></div><div><dt>{ui("Операции и основания")}</dt><dd><ul>{ticketPreview.preview.operations.map((item, index) => <li key={index}>{item.text} — {item.manual}, стр. {item.pdfPage}</li>)}</ul></dd></div>{ticketPreview.preview.historicalNote && <div><dt>{ui("Историческая подсказка")}</dt><dd>{ticketPreview.preview.historicalNote}</dd></div>}<div><dt>{ui("Запчасти")}</dt><dd>{ticketPreview.preview.spareParts.length ? ticketPreview.preview.spareParts.join(", ") : ui("Не указаны")}</dd></div></dl><p>{ui("Подтверждение отправит ровно этот просмотр. Голосовые команды не меняют приоритет и не подтверждают передачу.")}</p><PButton type="button" variant="primary" disabled={busy || !!ticketId || ticketPreview.preview.vehicleId !== vehicleId || ticketPreview.preview.sessionId !== sessionId} onClick={() => void confirmTicket()}>{ui("Подтвердить и передать в ТОиР")}</PButton> <PButton type="button" variant="secondary" disabled={busy} onClick={() => setTicketPreview(null)}>{ui("Отменить просмотр")}</PButton></section>;
+  useEffect(() => {
+    if (!assistantHost || !repairTicketPreview) return;
+    const preview = assistantHost.querySelector<HTMLElement>('[aria-label="Проверка заявки перед отправкой"]');
+    preview?.scrollIntoView({ block: "nearest" });
+    preview?.focus({ preventScroll: true });
+  }, [assistantHost, ticketPreview]);
   return <>
     <section className="panel full-panel neuro-dvs"><h2><Activity size={21}/> {ui("Акустическая диагностика двигателя")}</h2>
       {error && <p className="auth-error" role="alert">{interfaceText(error)}</p>}
       {diagnosis && planMode && <div className="neuro-result neuro-plan-view" aria-label={ui("План работ по руководству")}>
-        <button className="neuro-plan-return" type="button" onClick={() => setPlanMode(false)}>{ui("Вернуться к результату диагностики")}</button>
-        <NeuroWorkflow key={contextKey} vehicle={currentVehicle?.vehicle_id || ""} engine={currentVehicle?.engine_model || ""} session={sessionId} checkedAt={currentSession?.checked_at || ""} confidence={confidence} status={displayDiagnosis} fault={String(rawDiagnosis.anomaly_title || rawDiagnosis.anomaly_type || "")} recommendations={workflowRecommendations} listening={planListening} onVoice={isSpeechRecognitionAvailable() ? () => setPlanListening(!planListening) : undefined} onRead={typeof window.speechSynthesis !== "undefined" ? () => { const current = workflowRecommendations[planStep]; if (current) { voiceReplyPending.current = true; speakVoiceReply(current.text, current.language); } } : undefined} pageRequest={pageRequest.step === planStep ? pageRequest.sequence : 0} voiceNote={stepNote} step={planStep} completed={performedSteps} onComplete={() => setPerformedSteps((items) => items.includes(planStep) ? items : [...items, planStep])} onStep={(step) => { setStepNote(""); setPlanStep(step); }} appPath={appPath} planOnly />
+        <button className="neuro-plan-return" type="button" onClick={returnToDiagnosis}><ArrowLeft size={17} />{ui("Вернуться к результату диагностики")}</button>
+        <NeuroWorkflow key={contextKey} vehicle={currentVehicle?.vehicle_id || ""} engine={currentVehicle?.engine_model || ""} session={sessionId} checkedAt={currentSession?.checked_at || ""} confidence={confidence} status={displayDiagnosis} fault={String(rawDiagnosis.anomaly_title || rawDiagnosis.anomaly_type || "")} recommendations={workflowRecommendations} listening={planListening} onVoice={() => openAssistant("voice")} onRead={typeof window.speechSynthesis !== "undefined" ? () => { const current = workflowRecommendations[planStep]; if (current) { voiceReplyPending.current = true; speakVoiceReply(current.text, current.language); } } : undefined} pageRequest={pageRequest.step === planStep ? pageRequest.sequence : 0} voiceNote={stepNote} step={planStep} completed={performedSteps} onComplete={() => setPerformedSteps((items) => items.includes(planStep) ? items : [...items, planStep])} onStep={(step) => { setStepNote(""); setPlanStep(step); }} appPath={appPath} planOnly />
+        {!assistantHost && repairTicketPreview}
       </div>}
       {diagnosis && !planMode && <div className={`neuro-result neuro-result--${diagnosis.guidance.status}`} aria-live="polite"><div><div className="eyebrow">{ui("РЕЗУЛЬТАТ ДИАГНОСТИКИ")}{currentSession ? ` · ${new Date(currentSession.checked_at).toLocaleString(voiceLanguage === "tg" ? "tg-TJ" : voiceLanguage === "uz" ? "uz-UZ" : voiceLanguage === "hi" ? "hi-IN" : voiceLanguage === "en" ? "en-US" : "ru-RU")}` : ""}</div><h2 className="diagnostic-verdict"><span aria-hidden="true">{statusIcon}</span> {ui(displayDiagnosis)}</h2>{nextActionText && <p className="diagnosis-next"><strong>{ui("Следующее действие")}</strong> {ui(nextActionText)}</p>}{abstained && <p>{ui(diagnosis.guidance.status === "check_failed" ? "Данные замера не прошли проверку. Выберите другую запись; диагноз и заявка по этой сессии не формируются." : diagnosis.guidance.status === "warning_confirmation_required" ? "Заявка недоступна до явного подтверждения качества или повторного замера." : diagnosis.guidance.status === "model_conflict" ? "Не применяйте этот код к выбранной машине. Проверьте модель и запись; далее нужна дефектовка." : "Результат не даёт оснований для диагноза. Требуется проверка механика.")}</p>}{quickNavigation}<details className="diagnosis-background"><summary><CircleHelp size={17} aria-hidden="true" />{ui("Обоснование результата")}</summary><p>{ui(diagnosis.guidance.message)}</p>{diagnosis.guidance.confidence?.percent !== null && diagnosis.guidance.confidence?.percent !== undefined && diagnosis.guidance.confidence.thresholdPercent !== undefined && <p>{ui(`Уверенность {confidence} по шкале 0–100%; порог {threshold}%`).replace("{confidence}", confidence).replace("{threshold}", String(diagnosis.guidance.confidence.thresholdPercent))}</p>}{!abstained && typeof rawDiagnosis.description === "string" && <p>{rawDiagnosis.description}</p>}</details>{diagnosisDetails.length > 0 && <dl className="neuro-facts">{diagnosisDetails.map(([label, value]) => <div key={label} className={label === "Качество замера" ? `neuro-quality neuro-quality--${diagnosis.guidance.quality?.value === "good" ? "good" : diagnosis.guidance.quality?.value === "warning" ? "warning" : diagnosis.guidance.quality?.value === "bad" ? "bad" : "unknown"}` : ""}><dt>{ui(label)}</dt><dd style={label === "Риск" ? { color: riskValue === "high" ? "var(--verdict-stop, #a42b27)" : riskValue === "medium" ? "var(--verdict-warning, #805300)" : riskValue === "low" ? "var(--verdict-normal, #15633f)" : undefined, fontWeight: 700 } : undefined}>{ui(String(value))}</dd></div>)}</dl>}{diagnosis.guidance.status === "warning_confirmation_required" && <PButton type="button" variant="primary" disabled={busy} onClick={() => void acknowledgeWarning()}>{ui("Подтверждаю проверку результата")}</PButton>}</div><PTag variant={diagnosis.guidance.status === "normal" ? "success" : diagnosis.guidance.status === "anomaly" ? "warning" : "secondary"}>{ui(diagnosis.guidance.status === "check_failed" ? "Замер не подтверждён" : diagnosis.guidance.status === "uncertain" ? "Недостаточно данных" : diagnosis.guidance.status === "warning_confirmation_required" ? "Нужно подтверждение" : diagnosis.guidance.status === "normal" ? "Отклонений нет" : diagnosis.guidance.status === "model_conflict" ? "Ошибка модели" : diagnosis.guidance.status === "stop" ? "СТОП" : "Требуется внимание")}</PTag></div>}
       {!planMode && <>
       {!diagnosis && quickNavigation}
       <div className="neuro-controls">
         <label>{ui("Сессия измерения")}<select ref={sessionSelect} disabled={busy || questionBusy} value={sessionId} onChange={(e) => { setVoiceTicketPending(null); setSessionId(e.target.value); clearContext(); }}><option value="">{ui("Выберите сессию")}</option>{currentVehicle?.sessions.map((item) => <option key={item.session_id} value={item.session_id}>{new Date(item.checked_at).toLocaleString(voiceLanguage === "tg" ? "tg-TJ" : voiceLanguage === "uz" ? "uz-UZ" : voiceLanguage === "hi" ? "hi-IN" : voiceLanguage === "en" ? "en-US" : "ru-RU")} · {interfaceText(neuroSessionStatus(item.status))}</option>)}</select></label>
-        <PButton type="button" variant="primary" disabled={!vehicleId || !sessionId || busy} onClick={() => diagnosis?.guidance.status === "check_failed" ? sessionSelect.current?.focus() : void diagnose()}>{ui(busy ? "Проверяем…" : diagnosis?.guidance.status === "check_failed" ? "Выбрать другую запись" : diagnosis ? "Получить результат повторно" : "Провести диагностику")}</PButton>
+        <PButton type="button" variant="primary" disabled={!vehicleId || !sessionId || busy} onPointerDown={() => { if (diagnosis) diagnosisReturnScrollY.current = window.scrollY; }} onClick={() => diagnosis?.guidance.status === "check_failed" ? sessionSelect.current?.focus() : void diagnose()}>{ui(busy ? "Проверяем…" : diagnosis?.guidance.status === "check_failed" ? "Выбрать другую запись" : diagnosis ? "Получить результат повторно" : "Провести диагностику")}</PButton>
       </div>
       <NeuroFleetOverview selectedVehicleId={vehicleId} sessions={currentVehicle?.sessions || []} history={vehicleHistory} historyError={vehicleHistoryError} onOpen={(nextVehicleId, nextSessionId, focusHistory) => { const nextVehicle = fleet.find((item) => item.vehicle_id === nextVehicleId); if (!nextVehicle?.sessions.some((item) => item.session_id === nextSessionId)) return; if (nextVehicleId !== vehicleId || nextSessionId !== sessionId) { clearContext(); setVehicleId(nextVehicleId); setSessionId(nextSessionId); } window.requestAnimationFrame(() => document.querySelector(focusHistory ? "#neuro-vehicle-history" : ".neuro-dvs")?.scrollIntoView({ behavior: "smooth", block: "start" })); }} />
       {repairRisk && <aside className="repair-insight" aria-label={ui("Опыт парка по этому диагнозу")}>
@@ -1084,13 +1163,16 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
         {repairRisk.synthetic && <small>{ui("Демонстрационная запись автопарка")}</small>}
       </aside>}
       {diagnosis?.guidance.ticketBlockReason === "inspection_only" && <p role="status">{ui("Выполните проверку на месте и запишите результат осмотра в карточке машины.")}</p>}
+      {diagnosis?.guidance.canCreateDefectoscopyTicket && <div className="neuro-ticket"><PButton type="button" variant="secondary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket("defectoscopy")}>{ui(ticketId ? "Заявка создана" : "Заявка на дефектовку")}</PButton><span>{ui("Только проверка из руководства; без ремонта и запчастей.")}</span></div>}
       {diagnosis?.guidance.recommendations.length ? <div className="neuro-section"><h3>{ui("Рекомендации")}</h3><ul>{diagnosis.guidance.recommendations.map((item, i) => <li key={`${item.manual}-${item.pdfPage}-${i}`}>{item.text}{item.excerpt && item.excerpt !== item.text ? <details><summary>Основание в руководстве</summary><p className="neuro-excerpt">{item.excerpt}</p></details> : null} <a href={appPath(item.url)} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a> <button type="button" onClick={() => openRecommendationStep(i)}>{ui("Открыть этот шаг в плане работ")}</button></li>)}</ul></div> : null}
       {diagnosis?.guidance.status === "anomaly" && !diagnosis.guidance.canCreateTicket && diagnosis.guidance.ticketBlockReason === "manual_evidence_required" && <aside className="neuro-defectoscopy" role="status"><strong>Нужна дефектовка</strong><p>{diagnosis.guidance.message} Для заявки ТОиР пока нет подтверждённой операции со ссылкой на руководство. Запишите условия замера и результаты осмотра в карточке машины.</p></aside>}
-      {diagnosis?.guidance.canCreateTicket && <div className="neuro-ticket" style={{ flexWrap: "wrap" }}><label>{ui("Приоритет заявки")}<select value={draftUrgency} disabled={busy || !!ticketPreview || !!ticketId} onChange={(e) => setDraftUrgency(e.target.value as "low" | "medium" | "high")}><option value="high">{ui("Высокий · до следующего рейса")}</option><option value="medium">{ui("Средний · к ближайшему плановому ТО")}</option><option value="low">{ui("Низкий · к следующему осмотру")}</option></select></label><PButton type="button" variant="primary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket()}>{ui(ticketId ? "Заявка создана" : "Подготовить просмотр заявки")}</PButton>{historicalPart && <p>{ui("Кандидат детали из истории:")} <strong>{historicalPart}</strong>. {ui("Требует проверки применимости.")}</p>}{ticketPreview && <section className="neuro-ticket-preview" style={{ flex: "1 1 100%", width: "100%", minWidth: 0, boxSizing: "border-box" }} aria-label={ui("Проверка заявки перед отправкой")}><h3>{ui("Проверьте заявку перед передачей в ТОиР")}</h3><dl><div><dt>{ui("Машина / сессия")}</dt><dd>{ticketPreview.preview.vehicleId} · {ticketPreview.preview.sessionId}</dd></div><div><dt>{ui("Двигатель / код")}</dt><dd>{ticketPreview.preview.engineModel} · {ticketPreview.preview.faultCode}</dd></div><div><dt>{ui("Уверенность / качество")}</dt><dd>{ticketPreview.preview.confidence.percent === null ? ui("не определена") : `${ticketPreview.preview.confidence.percent}%`} (порог {ticketPreview.preview.confidence.thresholdPercent}%) · {ui(ticketPreview.preview.signalQuality.label)}</dd></div><div><dt>{ui("Приоритет")}</dt><dd>{ticketPreview.preview.urgencyMeaning}</dd></div><div><dt>{ui("Заключение")}</dt><dd>{ticketPreview.preview.conclusion}</dd></div><div><dt>{ui("Операции и основания")}</dt><dd><ul>{ticketPreview.preview.operations.map((item, index) => <li key={index}>{item.text} — {item.manual}, стр. {item.pdfPage}</li>)}</ul></dd></div>{ticketPreview.preview.historicalNote && <div><dt>{ui("Историческая подсказка")}</dt><dd>{ticketPreview.preview.historicalNote}</dd></div>}<div><dt>{ui("Запчасти")}</dt><dd>{ticketPreview.preview.spareParts.length ? ticketPreview.preview.spareParts.join(", ") : ui("Не указаны")}</dd></div></dl><p>{ui("Подтверждение отправит ровно этот просмотр. Голосовые команды не меняют приоритет и не подтверждают передачу.")}</p><PButton type="button" variant="primary" disabled={busy || !!ticketId || ticketPreview.preview.vehicleId !== vehicleId || ticketPreview.preview.sessionId !== sessionId} onClick={() => void confirmTicket()}>{ui("Подтвердить и передать в ТОиР")}</PButton> <PButton type="button" variant="secondary" disabled={busy} onClick={() => setTicketPreview(null)}>{ui("Отменить просмотр")}</PButton></section>}{ticketId && <p role="status">{ui("Номер заявки:")} <strong>{ticketId}</strong></p>}</div>}
+      {diagnosis?.guidance.canCreateTicket && ticketPreview?.preview.purpose !== "defectoscopy" && <div className="neuro-ticket" style={{ flexWrap: "wrap" }}><label>{ui("Приоритет заявки")}<select value={draftUrgency} disabled={busy || !!ticketPreview || !!ticketId} onChange={(e) => setDraftUrgency(e.target.value as "low" | "medium" | "high")}><option value="high">{ui("Высокий · до следующего рейса")}</option><option value="medium">{ui("Средний · к ближайшему плановому ТО")}</option><option value="low">{ui("Низкий · к следующему осмотру")}</option></select></label><PButton type="button" variant="primary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket()}>{ui(ticketId ? "Заявка создана" : "Подготовить просмотр заявки")}</PButton>{historicalPart && <p>{ui("Кандидат детали из истории:")} <strong>{historicalPart}</strong>. {ui("Требует проверки применимости.")}</p>}{!assistantHost && repairTicketPreview}{ticketId && <p role="status">{ui("Номер заявки:")} <strong>{ticketId}</strong></p>}</div>}
       </>}
+      {defectoscopyPreview && (assistantHost ? createPortal(defectoscopyPreview, assistantHost) : defectoscopyPreview)}
     </section>
-    <section className="panel full-panel neuro-qa"><div><div className="eyebrow">{ui("ОТВЕТЫ С ОПОРОЙ НА РУКОВОДСТВА")}</div><h2>{ui("Сообщение механику")}</h2><p>{ui("Голосовые команды выполняются сразу; для текста в поле используйте кнопку отправки.")}</p></div>
-      <MechanicVoice key={contextKey} listening={planListening} onListeningChange={setPlanListening} disabled={!currentVehicle} language={voiceLanguage} onCommand={(phrase) => {
+    {assistantHost && createPortal(<section className="panel full-panel neuro-qa">
+      {assistantMode === "voice" && workflowRecommendations[planStep] && <p aria-live="polite"><strong>{ui("План работ")} · {planStep + 1}/{workflowRecommendations.length}</strong><br />{workflowRecommendations[planStep].title || workflowRecommendations[planStep].text}</p>}
+      {assistantMode === "voice" && <MechanicVoice key={contextKey} listening={planListening} onListeningChange={setPlanListening} disabled={!currentVehicle} language={voiceLanguage} onCommand={(phrase) => {
         if (busy || questionBusy) { setVoiceFeedback("Обрабатываю предыдущую команду."); return; }
         setVoiceFeedback(""); setError("");
         voiceReplyPending.current = false;
@@ -1099,7 +1181,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
           if (voiceConfirmation(normalized, voiceLanguage)) {
             const current = matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis);
             setVoiceTicketPending(null);
-            if (current) void prepareTicket();
+            if (current) void prepareTicket(voiceTicketPurpose);
             else setError("Контекст изменился. Повторите диагностику перед созданием заявки.");
             return;
           }
@@ -1151,13 +1233,15 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
         }
         if (isRepairHistoryQuestion(phrase, voiceLanguage)) {
           voiceReplyPending.current = true;
-          document.querySelector(".repair-experience")?.scrollIntoView({ behavior: "smooth", block: "start" });
+
           setQuestion(phrase.slice(0, 500)); void askManualText(phrase);
           return;
         }
         if (isTicketCommand(phrase, voiceLanguage)) {
           voiceReplyPending.current = false;
-          if (!diagnosis?.guidance.canCreateTicket) { setError("Для заявки ТОиР сначала нужен подтверждённый диагноз с рекомендациями из руководства."); return; }
+          const purpose = /дефектовк/iu.test(phrase) ? "defectoscopy" : "repair";
+          if (purpose === "repair" ? !diagnosis?.guidance.canCreateTicket : !diagnosis?.guidance.canCreateDefectoscopyTicket) { setError("Для выбранного типа заявки нет подтверждённой операции из руководства."); return; }
+          setVoiceTicketPurpose(purpose);
           setVoiceTicketPending(bindVoiceTicket(vehicleId, sessionId, diagnosis));
           return;
         }
@@ -1165,17 +1249,18 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
         voiceReplyPending.current = true;
         setQuestion(phrase.slice(0, 500));
         void askManualText(phrase);
-      }} />
+      }} />}
       {(voiceFeedback || error || busy || questionBusy) && <p className="voice-result" role="status">{error ? ui(error) : (busy || questionBusy ? ui("Обрабатываю команду…") : ui(voiceFeedback))}</p>}
-      {voiceTicketPending && <div className="context-empty" role="status"><p>{ui("Команда распознана для")} {currentVehicle?.vehicle_id} · {sessionId}. {ui("Просмотр откроется для проверки; голосом отправить заявку нельзя.")}</p><PButton type="button" variant="primary" disabled={busy || !matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis)} onClick={() => { if (matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis)) void prepareTicket(); else { setVoiceTicketPending(null); setError("Контекст изменился. Повторите диагностику перед созданием заявки."); } }}>{ui("Открыть просмотр заявки")}</PButton> <PButton type="button" variant="secondary" onClick={() => setVoiceTicketPending(null)}>{ui("Отмена")}</PButton></div>}
+      {voiceTicketPending && <div className="context-empty" role="status"><p>{ui("Команда распознана для")} {currentVehicle?.vehicle_id} · {sessionId}. {ui("Просмотр откроется для проверки; голосом отправить заявку нельзя.")}</p><PButton type="button" variant="primary" disabled={busy || !matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis)} onClick={() => { if (matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis)) void prepareTicket(voiceTicketPurpose); else { setVoiceTicketPending(null); setError("Контекст изменился. Повторите диагностику перед созданием заявки."); } }}>{ui(voiceTicketPurpose === "defectoscopy" ? "Открыть просмотр дефектовки" : "Открыть просмотр заявки")}</PButton> <PButton type="button" variant="secondary" onClick={() => setVoiceTicketPending(null)}>{ui("Отмена")}</PButton></div>}
+      {repairTicketPreview}
       <form onSubmit={(e) => void askManual(e)}><label>{ui("Вопрос или команда")}<textarea rows={3} maxLength={500} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder={ui("Можно ли своим ходом перегнать машину на базу?")} /></label><PButton type="submit" variant="primary" disabled={!currentVehicle || question.length < 3 || questionBusy || busy}>{ui(questionBusy ? "Ищем в руководствах…" : "Отправить")}</PButton></form>
       {answerUnavailable && <p className="auth-error" role="status">{ui("Сервис подготовки ответа недоступен. Откройте поиск по руководствам в общем помощнике, чтобы посмотреть страницы самостоятельно.")}</p>}
       {answerText && answerText !== voiceFeedback && <p className="neuro-answer" role="status">{answerText}</p>}
       {conversationNotice && <p role="status">{ui(conversationNotice)}</p>}
-      <NeuroChatHistory turns={chatTurns} appPath={appPath} />
+      {conversationAuthorizationKey === `${assistantOpenId}:${contextKey}` ? <NeuroChatHistory turns={chatTurns} appPath={appPath} /> : <p role="status">{ui(conversationNotice || "Загрузка")}</p>}
       {answers && (answers.length ? <div className="neuro-section"><details><summary>{ui("Страницы руководства")} · {answers.length}</summary>{answers.map((item, i) => <article key={`${item.manual}-${item.pdfPage}-${i}`}><p>{item.text}</p><a href={appPath(item.url)} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a></article>)}</details></div> : !answerUnavailable && <p className="context-empty" role="status">{ui("В руководствах нет прямого основания для решения. Данных недостаточно: требуется оценка механика и дефектовка.")}</p>)}
-    </section>
-    {!planMode && <NeuroWorkflow key={contextKey} vehicle={currentVehicle?.vehicle_id || ""} engine={currentVehicle?.engine_model || ""} session={sessionId} checkedAt={currentSession?.checked_at || ""} confidence={typeof rawDiagnosis.confidence === "number" ? `${Math.round(rawDiagnosis.confidence <= 1 ? rawDiagnosis.confidence * 100 : rawDiagnosis.confidence)}%` : "не определена"} status={diagnosis ? displayDiagnosis : currentSession ? interfaceText(neuroSessionStatus(currentSession.status)) : "Ожидает выбора измерения"} fault={String(rawDiagnosis.anomaly_title || rawDiagnosis.anomaly_type || "")} recommendations={workflowRecommendations} listening={planListening} onVoice={isSpeechRecognitionAvailable() ? () => setPlanListening(!planListening) : undefined} onRead={typeof window.speechSynthesis !== "undefined" ? () => { const current = workflowRecommendations[planStep]; if (current) { voiceReplyPending.current = true; speakVoiceReply(current.text, current.language); } } : undefined} pageRequest={pageRequest.step === planStep ? pageRequest.sequence : 0} voiceNote={stepNote} step={planStep} completed={performedSteps} onComplete={() => setPerformedSteps((items) => items.includes(planStep) ? items : [...items, planStep])} onStep={(step) => { setStepNote(""); setPlanStep(step); }} appPath={appPath} />}
+    </section>, assistantHost)}
+    {!planMode && <NeuroWorkflow key={contextKey} vehicle={currentVehicle?.vehicle_id || ""} engine={currentVehicle?.engine_model || ""} session={sessionId} checkedAt={currentSession?.checked_at || ""} confidence={typeof rawDiagnosis.confidence === "number" ? `${Math.round(rawDiagnosis.confidence <= 1 ? rawDiagnosis.confidence * 100 : rawDiagnosis.confidence)}%` : "не определена"} status={diagnosis ? displayDiagnosis : currentSession ? interfaceText(neuroSessionStatus(currentSession.status)) : "Ожидает выбора измерения"} fault={String(rawDiagnosis.anomaly_title || rawDiagnosis.anomaly_type || "")} recommendations={workflowRecommendations} listening={planListening} onVoice={() => openAssistant("voice")} onRead={typeof window.speechSynthesis !== "undefined" ? () => { const current = workflowRecommendations[planStep]; if (current) { voiceReplyPending.current = true; speakVoiceReply(current.text, current.language); } } : undefined} pageRequest={pageRequest.step === planStep ? pageRequest.sequence : 0} voiceNote={stepNote} step={planStep} completed={performedSteps} onComplete={() => setPerformedSteps((items) => items.includes(planStep) ? items : [...items, planStep])} onStep={(step) => { setStepNote(""); setPlanStep(step); }} appPath={appPath} />}
     {!planMode && diagnosis && <MechanicLanguage status={diagnosis.guidance.status === "normal" ? "normal" : diagnosis.guidance.status === "anomaly" ? "anomaly" : diagnosis.guidance.status === "check_failed" || diagnosis.guidance.status === "stop" || diagnosis.guidance.status === "model_conflict" ? "check_failed" : "uncertain"} engineModel={currentVehicle?.engine_model || ""} anomalyCode={String(rawDiagnosis.anomaly_type || "")} recommendations={diagnosis.guidance.recommendations.map((item) => ({ ...item, url: appPath(item.url) }))} onOpenStep={openRecommendationStep} />}
     {!planMode && hasRepairHistory && <RepairExperience key={`history:${contextKey}`} engineModel={currentVehicle?.engine_model || ""} data={currentExperience?.data || null} error={currentExperience?.error || ""} selectionLocked={busy || !!ticketId} onSelectPart={(part) => { setVoiceTicketPending(null); setTicketPreview(null); setHistoricalPart(part); }} onComparePart={(part) => setComparison({ context: contextKey, part })} selectedHistoricalPart={historicalPart} />}
     {!planMode && hasRepairHistory && currentVehicle && comparison?.context === contextKey && <PartOffers key={contextKey + comparison.part} vehicleId={vehicleId} vehicleName={currentVehicle.model} partName={comparison.part} quantity={1} onProcure={() => { onProcureHistorical(comparison.part); setComparison(null); }} />}
@@ -1411,6 +1496,7 @@ function AdminVehicleAssignments() {
   const [vehicles, setVehicles] = useState<NeuroFleetVehicle[]>([]);
   const [vehicleId, setVehicleId] = useState("");
   const [assigned, setAssigned] = useState<string[]>([]);
+  const [loadedAssignmentUserIds, setLoadedAssignmentUserIds] = useState<string[]>([]);
   const [loadedAssignmentVehicleId, setLoadedAssignmentVehicleId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1425,12 +1511,12 @@ function AdminVehicleAssignments() {
     return () => { active = false; };
   }, []);
   useEffect(() => {
-    if (!vehicleId) { setAssigned([]); return; }
+    if (!vehicleId) { setAssigned([]); setLoadedAssignmentUserIds([]); return; }
     let active = true;
-    setLoadedAssignmentVehicleId(null); setAssigned([]);
+    setLoadedAssignmentVehicleId(null); setAssigned([]); setLoadedAssignmentUserIds([]);
     setLoading(true); setError(""); setNotice("");
     api<{ assignments: { userId: string; active: boolean }[] }>(`/api/neuro/vehicles/${encodeURIComponent(vehicleId)}/assignments`)
-      .then(({ assignments }) => { if (active) { setAssigned(assignments.filter(item => item.active).map(item => item.userId)); setLoadedAssignmentVehicleId(vehicleId); } })
+      .then(({ assignments }) => { if (active) { const userIds = assignments.filter(item => item.active).map(item => item.userId); setAssigned(userIds); setLoadedAssignmentUserIds(userIds); setLoadedAssignmentVehicleId(vehicleId); } })
       .catch(cause => { if (active) { setAssigned([]); setLoadedAssignmentVehicleId(null); setError(cause instanceof Error ? cause.message : "Не удалось загрузить назначения"); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -1440,9 +1526,21 @@ function AdminVehicleAssignments() {
     if (!assignmentReady) return;
     setSaving(true); setError(""); setNotice("");
     try {
-      const result = await api<{ assignments: { userId: string; active: boolean }[] }>(`/api/neuro/vehicles/${encodeURIComponent(vehicleId)}/assignments`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userIds: assigned }) });
-      setAssigned(result.assignments.filter(item => item.active).map(item => item.userId)); setLoadedAssignmentVehicleId(vehicleId); setNotice(interfaceText("Назначения сохранены."));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Не удалось сохранить назначения"); }
+      const result = await api<{ assignments: { userId: string; active: boolean }[] }>(`/api/neuro/vehicles/${encodeURIComponent(vehicleId)}/assignments`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userIds: assigned, expectedUserIds: loadedAssignmentUserIds }) });
+      const userIds = result.assignments.filter(item => item.active).map(item => item.userId);
+      setAssigned(userIds); setLoadedAssignmentUserIds(userIds); setLoadedAssignmentVehicleId(vehicleId); setNotice(interfaceText("Назначения сохранены."));
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "assignment_conflict") {
+        setLoadedAssignmentVehicleId(null); setAssigned([]); setLoadedAssignmentUserIds([]); setLoading(true);
+        try {
+          const { assignments } = await api<{ assignments: { userId: string; active: boolean }[] }>(`/api/neuro/vehicles/${encodeURIComponent(vehicleId)}/assignments`);
+          const userIds = assignments.filter(item => item.active).map(item => item.userId);
+          setAssigned(userIds); setLoadedAssignmentUserIds(userIds); setLoadedAssignmentVehicleId(vehicleId);
+          setNotice(interfaceText("Назначения изменил другой администратор. Список обновлён; проверьте его и примените изменения повторно."));
+        } catch (refreshCause) { setError(refreshCause instanceof Error ? refreshCause.message : "Не удалось обновить назначения"); }
+        finally { setLoading(false); }
+      } else setError(cause instanceof Error ? cause.message : "Не удалось сохранить назначения");
+    }
     finally { setSaving(false); }
   }
   const mechanics = users.filter(user => user.active && user.role === "mechanic");
@@ -1742,6 +1840,36 @@ export default function App() {
   useEffect(() => setSelectedZone(""), [selected]);
   const vehicle =
     data?.vehicles.find((v) => v.id === selected) || data?.vehicles[0];
+  const [headerMode, setHeaderMode] = useState<AssistantMode | null>(null);
+  const [assistantOpenId, setAssistantOpenId] = useState(0);
+  const [assistantHost, setAssistantHost] = useState<HTMLDivElement | null>(null);
+  const [dictating, setDictating] = useState(false);
+  const assistantDialog = useRef<HTMLDialogElement>(null);
+  const assistantTrigger = useRef<HTMLElement | null>(null);
+  const diagnosticAssistant = Boolean(headerMode && page === "Карточка" && tab === "diagnostics" && vehicle?.neuroVehicleId);
+  function openHeaderAssistant(mode: AssistantMode) {
+    assistantTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setAssistantOpenId(value => value + 1);
+    setHeaderMode(mode);
+    setDictating(mode === "voice" && Boolean(isSpeechRecognitionAvailable()));
+    setChatOpen(true);
+  }
+  useEffect(() => {
+    const dialog = assistantDialog.current;
+    if (!chatOpen || !dialog) return;
+    dialog.showModal();
+    if (!diagnosticAssistant && headerMode !== "voice") dialog.querySelector("textarea")?.focus({ preventScroll: true });
+    return () => {
+      dialog.close();
+      assistantTrigger.current?.focus({ preventScroll: true });
+      assistantTrigger.current = null;
+    };
+  }, [chatOpen, diagnosticAssistant, headerMode]);
+  function closeAssistant() {
+    setChatOpen(false);
+    setHeaderMode(null);
+    setDictating(false);
+  }
   const vehicleEngineModel = matchingEngineManual(vehicle?.engine);
   const chatScope = manualOnly
     ? `mehay-manual-chat-${encodeURIComponent(engineModel)}`
@@ -2796,6 +2924,14 @@ export default function App() {
               Рабочий стол <span>/</span> {translateSystemText(page, interfaceLanguage)}
             </div>
             <div className="top-actions">
+              {data && <nav className="header-assistant-actions" aria-label={t("Быстрая навигация", interfaceLanguage)}>
+                {(["question", "voice"] as const).map((mode) => {
+                  const label = t(mode === "voice" ? "Голосовое управление механика" : "Задать вопрос", interfaceLanguage);
+                  return <button key={mode} type="button" title={label} aria-label={label} aria-haspopup="dialog" onClick={() => openHeaderAssistant(mode)}>
+                    {mode === "voice" ? <Mic size={18} /> : <MessageSquareText size={18} />}<span>{mode === "voice" ? t("Голосовой ввод", interfaceLanguage) : label}</span>
+                  </button>;
+                })}
+              </nav>}
               <SystemLanguagePicker />
               <span className="date-chip">
                 <Clock3 size={14} />
@@ -3146,7 +3282,7 @@ export default function App() {
                             )}
                             {tab === "diagnostics" && (
                               <div className="vehicle-content">
-                                {vehicle.neuroVehicleId && <NeuroDvsPage key={vehicle.id + requestedSession} cardId={vehicle.neuroVehicleId} requestedSession={requestedSession} routerConfigured={Boolean(data.ai.configured)} currentMechanic={authUser} onProcureHistorical={(part) => {
+                                {vehicle.neuroVehicleId && <NeuroDvsPage assistantHost={diagnosticAssistant && chatOpen ? assistantHost : null} assistantMode={headerMode} assistantOpenId={assistantOpenId} openAssistant={openHeaderAssistant} key={vehicle.id + requestedSession} cardId={vehicle.neuroVehicleId} requestedSession={requestedSession} routerConfigured={Boolean(data.ai.configured)} currentMechanic={authUser} onProcureHistorical={(part) => {
                                   const parkName = (() => { try { return window.localStorage.getItem("mehay-parts-offers-park") || "moscow"; } catch { return "moscow"; } })();
                                   setRequestPartOther(part); setRequestPartId(""); setRequestPartQty("1"); setProcurementConfirmed(false);
                                   setForm({ type: "procurement", title: `Проверить закупку: ${part}`, description: `Кандидат детали из истории ремонта; применимость не подтверждена. Парк сравнения: ${parkName}. Количество: 1. Сверьте наименование, номер и применимость перед подтверждением; заказ поставщику не отправляется.`, priority: "normal", part: part, quantity: "1" });
@@ -4394,18 +4530,17 @@ export default function App() {
                   </div>
                 </>
               )}
-              {!mobile && page !== "НейроДВС" && <button
-                className="chat-launch"
-                aria-expanded={chatOpen}
-                onClick={() => setChatOpen((open) => !open)}
-              >
-                <MessageSquareText size={18} /> Помощник{" "}
-                {vehicle ? `· ${vehicle.plate}` : ""}
-              </button>}
+
             </>
           )}
         </main>
-        {chatOpen && page !== "НейроДВС" && (
+        {chatOpen && (
+          <dialog ref={assistantDialog} className="header-assistant-dialog" data-theme={theme} aria-label={t(headerMode === "voice" ? "Голосовое управление механика" : "Задать вопрос", interfaceLanguage)} onCancel={event => { event.preventDefault(); closeAssistant(); }}>
+          {diagnosticAssistant ? <div className="diagnostic-assistant">
+            <div className="drawer-head"><div><strong>{t(headerMode === "voice" ? "Голосовое управление механика" : "Задать вопрос", interfaceLanguage)}</strong><p>{vehicle?.plate} · {vehicle?.model}</p></div>
+              <button type="button" className="icon-btn" aria-label={translateSystemText("Закрыть", interfaceLanguage)} onClick={closeAssistant}><X size={20}/></button>
+            </div><div ref={setAssistantHost} />
+          </div> : (
           <aside className="chat-drawer" data-theme={theme} aria-label="Чат помощника">
             <div className="drawer-head">
               <div>
@@ -4421,7 +4556,7 @@ export default function App() {
               <button
                 className="icon-btn"
                 aria-label="Закрыть чат"
-                onClick={() => setChatOpen(false)}
+                onClick={closeAssistant}
               >
                 <X size={19} />
               </button>
@@ -4463,7 +4598,12 @@ export default function App() {
                 placeholder="Опишите наблюдение или вопрос"
               />
             </label>
-            {vehicle && <VoiceInput key={`chat-${vehicle.id}`} onTranscript={(text) => setMessage((current) => appendTranscript(current, text))} disabled={assistantBusy} />}
+            {headerMode === "voice" && isSpeechRecognitionAvailable() ? <div>
+              <button type="button" className="theme-toggle" aria-pressed={dictating} disabled={assistantBusy} onClick={() => setDictating(!dictating)}><Mic size={18}/>{t(dictating ? "Завершить разговор" : "Начать голосовое управление", interfaceLanguage)}</button>
+              <VoiceInput mode="managed" active={dictating} onListeningChange={setDictating} disabled={assistantBusy} onTranscript={text => { setDictating(false);
+                setMessage(appendTranscript(message, text));
+                if (!message.trim() && !webSearch && (manualOnly ? engineModel : data?.ai.configured)) setAutoSendPrompt(text); }} />
+            </div> : vehicle && <VoiceInput key={`chat-${vehicle.id}`} onTranscript={(text) => setMessage((current) => appendTranscript(current, text))} disabled={assistantBusy} />}
             {webSearch && (
               <label className="web-query-field drawer-web-query">
                 Запрос для открытого веб-поиска
@@ -4526,7 +4666,8 @@ export default function App() {
               <summary>Предыдущие вопросы ({chatHistory.slice(0, currentQuestionStart).filter((entry) => entry.role === "user").length})</summary>
               {chatHistory.slice(0, currentQuestionStart).map(renderChatEntry)}
             </details>}
-          </aside>
+          </aside>)}
+          </dialog>
         )}
         {modal && vehicle && (
           <div

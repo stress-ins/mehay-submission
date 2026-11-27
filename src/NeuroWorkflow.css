@@ -23,6 +23,9 @@
 .neuro-step-plan button:disabled { cursor: default; opacity: .55; }
 .neuro-evidence { display: grid; justify-items: start; gap: .4rem; margin: .5rem 0; }
 .neuro-evidence img { display: block; width: min(100%, 900px); height: auto; margin-top: .5rem; border: 1px solid #cbd5e1; background: #fff; }
+.neuro-evidence details > summary { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; cursor: pointer; font-weight: 650; }
+.neuro-evidence details > summary:focus-visible { outline: 2px solid #568976; outline-offset: 2px; }
+.neuro-evidence details > summary svg { flex: none; }
 .neuro-turn { padding: .75rem; margin-top: .65rem; border-radius: .5rem; background: var(--green-soft, #f4f6f8); color: var(--ink, #1f2937); }
 .neuro-turn p { margin: .35rem 0; white-space: pre-wrap; }
 

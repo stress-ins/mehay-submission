@@ -24,7 +24,7 @@ export function seedRepairHistory(vehicle, index) {
   const codes = [...new Set([...ownCodes, "F01", "F02", "F04"])];
   return codes.map((faultCode, i) => {
     const [title, part] = jobs[faultCode];
-    const delayed = index === 5 && faultCode === "F01";
+    const delayed = vehicle.demo_repair_case === "late-f01" && faultCode === "F01";
     const plannedHours = 4 + (i % 3);
     const actualHours = delayed ? 12 : plannedHours + ((index + i) % 3) - 1;
     const completedAt = delayed ? "2026-09-18" : new Date(Date.UTC(2026, 7, 1 + ((index * 7 + i * 11) % 55))).toISOString().slice(0, 10);

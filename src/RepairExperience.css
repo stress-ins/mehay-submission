@@ -62,6 +62,8 @@
 .neuro-dvs .neuro-ticket > .btn,
 .neuro-qa form > .btn,
 .neuro-qa form > div .btn { min-height: 56px; }
+.neuro-dvs .neuro-controls select,
+.neuro-dvs .neuro-controls > .btn { box-sizing: border-box; height: 56px; }
 .neuro-dvs .neuro-controls select { padding: 12px; }
 
 @media (max-width: 760px) {

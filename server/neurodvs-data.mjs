@@ -11,9 +11,17 @@ try {
   throw new Error("neurodvs_data_unavailable");
 }
 
-if (!Array.isArray(data?.vehicles) || !data.vehicles.length || data.vehicles.some((vehicle) =>
-  typeof vehicle?.vehicle_id !== "string" || !Array.isArray(vehicle.sessions) || vehicle.sessions.some((session) =>
-    typeof session?.session_id !== "string" || session.vehicle_id !== vehicle.vehicle_id))) {
+const sessionIds = new Set();
+if (!Array.isArray(data?.vehicles) || !data.vehicles.length || data.vehicles.some((vehicle) => {
+  if (typeof vehicle?.vehicle_id !== "string" || !vehicle.vehicle_id.trim() || !Array.isArray(vehicle.sessions) || !vehicle.sessions.length) return true;
+  return vehicle.sessions.some((session) => {
+    if (typeof session?.session_id !== "string" || !session.session_id.trim() || session.vehicle_id !== vehicle.vehicle_id ||
+      typeof session.checked_at !== "string" || !session.checked_at.trim() || !Number.isFinite(Date.parse(session.checked_at)) ||
+      sessionIds.has(session.session_id)) return true;
+    sessionIds.add(session.session_id);
+    return false;
+  });
+})) {
   throw new Error("neurodvs_data_invalid");
 }
 

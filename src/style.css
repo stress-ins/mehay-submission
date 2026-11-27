@@ -3885,7 +3885,7 @@ body, button, input, select, textarea { font-family: system-ui, -apple-system, "
 }
 .neuro-controls {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.3fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
   gap: 14px;
   align-items: end;
 }
@@ -3960,10 +3960,13 @@ body, button, input, select, textarea { font-family: system-ui, -apple-system, "
 .neuro-ticket > button { min-height: 48px; }
 .neuro-qa form { display: grid; gap: 12px; margin-top: 18px; }
 .neuro-qa form button { justify-self: start; }
+@media (max-width: 850px) {
+  .vehicle-content:has(.neuro-dvs) { padding-bottom: 24px; }
+}
 @media (max-width: 700px) {
   .neuro-dvs, .neuro-qa { padding: 15px; }
   .neuro-controls { grid-template-columns: 1fr; }
-  .neuro-controls button { justify-self: start; }
+  .neuro-controls button { width: 100%; }
   .neuro-result { flex-direction: column; }
   .neuro-ticket { align-items: stretch; flex-direction: column; }
   .neuro-ticket > label { width: 100%; }

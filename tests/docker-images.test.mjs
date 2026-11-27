@@ -14,8 +14,8 @@ test('default and CI app builds select the Node app; mock image is a separate ta
   assert.deepEqual(stages, ['build', 'neurodvs-mocks', 'app']);
   assert.match(workflow, /docker build --target app\b/);
   assert.match(workflow, /docker build --target neurodvs-mocks\b/);
-  assert.match(workflow, /target:\s*app\b/);
-  assert.match(workflow, /target:\s*neurodvs-mocks\b/);
+  assert.doesNotMatch(workflow, /push:\s*true/);
+  assert.doesNotMatch(workflow, /VPS_SSH_KEY|root@\d+\.\d+\.\d+\.\d+/);
   assert.match(dockerfile, /^CMD \["sh", "-c", "node scripts\/validate-knowledge\.mjs/m);
   assert.equal([...dockerfile.matchAll(/^CMD\s/mg)].length, 1);
   assert.doesNotMatch(compose.split('\n  mock-ml:')[0], /^    command:/m);

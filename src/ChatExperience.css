@@ -194,3 +194,87 @@
 
 .planning-context-grid article header { display: flex; align-items: center; gap: .5rem; }
 .planning-context-grid article p { display: grid; gap: .25rem; }
+
+.shell .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--paper);
+}
+.header-assistant-actions {
+  display: flex;
+  align-items: center;
+  gap: .375rem;
+}
+.header-assistant-actions button {
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  min-width: 44px;
+  min-height: 44px;
+  padding: .4rem .7rem;
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+  background: var(--green-soft);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+}
+.header-assistant-actions button:hover,
+.header-assistant-actions button:focus-visible { border-color: currentColor; }
+.header-assistant-dialog {
+  position: fixed;
+  inset: 0 0 auto auto;
+  margin: 0;
+  width: min(34rem, 100%);
+  max-width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-inline-start: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: -6px 0 24px #14221e26;
+}
+.header-assistant-dialog::backdrop { background: #13252055; }
+.header-assistant-dialog .chat-drawer {
+  position: static;
+  width: 100%;
+  min-height: 100%;
+  padding: 1rem;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+.diagnostic-assistant > .drawer-head {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  padding: 1rem;
+  background: var(--paper);
+}
+.diagnostic-assistant .neuro-qa {
+  margin: 0;
+  padding: 1rem;
+  border: 0;
+}
+.diagnostic-assistant .mechanic-voice { padding: .75rem; }
+@media (max-width: 1190px) {
+  .header-assistant-actions button { padding-inline: .5rem; }
+  .header-assistant-actions button span { display: none; }
+}
+@media (max-width: 600px) {
+  .shell .topbar .crumb, .shell .topbar .date-chip { display: none; }
+  .shell .top-actions { gap: .3rem; min-width: 0; }
+  .shell .topbar { height: auto; min-height: 52px; gap: .25rem; }
+  .header-assistant-actions { gap: .25rem; }
+}
+@media (max-width: 380px) {
+  .shell .topbar .avatar { display: none; }
+}

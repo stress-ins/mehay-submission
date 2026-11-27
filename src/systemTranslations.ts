@@ -12,6 +12,7 @@ const translations: Record<string, Partial<Record<MechanicLanguageCode, string>>
   "Нет активных учётных записей механиков.": { en: "There are no active mechanic accounts." },
   "Сохранить назначения": { en: "Save assignments" },
   "Назначения сохранены.": { en: "Assignments saved." },
+  "Назначения изменил другой администратор. Список обновлён; проверьте его и примените изменения повторно.": { en: "Another administrator changed these assignments. The list has been refreshed; review it and apply your changes again." },
   "Сохраняем…": { en: "Saving…" },
   "Загружаем…": { en: "Loading…" },
   "Не удалось сравнить предложения.": { en: "Could not compare offers.", hi: "ऑफ़र की तुलना नहीं हो सकी।", tg: "Муқоисаи пешниҳодҳо муяссар нашуд.", uz: "Takliflarni taqqoslab bo‘lmadi." },

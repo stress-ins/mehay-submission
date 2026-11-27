@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
+import stat
 import shutil
 import sys
 import tempfile
@@ -49,14 +51,26 @@ def validate_prepared_knowledge(root):
     if index.get("version") != 1 or not isinstance(manuals, list) or len(manuals) != 6:
         raise FetchError("incomplete prepared knowledge")
     hashes = set()
+    manuals_by_id = {}
     for manual in manuals:
+        identifier = manual.get("id") if isinstance(manual, dict) else None
+        title = manual.get("title") if isinstance(manual, dict) else None
         filename = manual.get("filename") if isinstance(manual, dict) else None
         digest = manual.get("sha256") if isinstance(manual, dict) else None
+        engine_keys = manual.get("engineKeys") if isinstance(manual, dict) else None
+        page_count = manual.get("pageCount") if isinstance(manual, dict) else None
         pages = manual.get("pages") if isinstance(manual, dict) else None
-        if (not isinstance(filename, str) or Path(filename).name != filename or not filename.lower().endswith(".pdf")
+        if (not isinstance(identifier, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,80}", identifier, re.IGNORECASE)
+                or identifier in manuals_by_id or not isinstance(title, str) or not title.strip()
+                or not isinstance(engine_keys, list) or not engine_keys or any(not isinstance(key, str) or not key.strip() for key in engine_keys)
+                or not isinstance(filename, str) or Path(filename).name != filename or not filename.lower().endswith(".pdf")
+                or isinstance(page_count, bool) or not isinstance(page_count, int) or page_count < 1
                 or not isinstance(digest, str) or len(digest) != 64 or not isinstance(pages, list) or not pages
-                or any(not isinstance(page, dict) or not isinstance(page.get("pdfPage"), int)
-                       or not isinstance(page.get("text"), str) or not page["text"].strip() for page in pages)):
+                or any(not isinstance(page, dict) or isinstance(page.get("pdfPage"), bool) or not isinstance(page.get("pdfPage"), int)
+                       or page["pdfPage"] < 1 or page["pdfPage"] > page_count or not isinstance(page.get("text"), str) for page in pages)
+                or not any(page["text"].strip() for page in pages)):
+            raise FetchError("invalid prepared knowledge index")
+        if manual.get("procedures") is not None and not isinstance(manual["procedures"], list):
             raise FetchError("invalid prepared knowledge index")
         pdf = root / "pdf" / filename
         try:
@@ -66,11 +80,58 @@ def validate_prepared_knowledge(root):
         if actual != digest:
             raise FetchError("prepared PDF does not match index")
         hashes.add(digest)
+        manuals_by_id[identifier] = manual
     if len(hashes) != 6:
         raise FetchError("duplicate prepared PDF")
     guidance = read_json(root / "guidance.json")
     if not isinstance(guidance, dict) or not isinstance(guidance.get("guidance"), list) or not guidance["guidance"]:
         raise FetchError("incomplete prepared guidance")
+
+    def validate_guidance(item, manual_id=None):
+        if not isinstance(item, dict):
+            raise FetchError("invalid prepared guidance")
+        manual = manuals_by_id.get(manual_id or item.get("manualId"))
+        page_number = item.get("pdfPage")
+        page = next((p["text"] for p in manual["pages"] if p["pdfPage"] == page_number), None) if manual else None
+        engine = item.get("engineModel")
+        quote = item.get("quote")
+        if (not manual or not isinstance(engine, str) or not isinstance(item.get("anomalyType"), str)
+                or isinstance(page_number, bool) or not isinstance(page_number, int) or page_number < 1
+                or not isinstance(item.get("text"), str) or not item["text"].strip()
+                or not isinstance(quote, str) or not quote.strip()
+                or engine.lower() not in [key.lower() for key in manual["engineKeys"]]
+                or not isinstance(page, str)
+                or " ".join(quote.lower().split()) not in " ".join(page.lower().split())):
+            raise FetchError("invalid prepared guidance")
+        translations = item.get("translations")
+        if translations is not None and (not isinstance(translations, dict) or any(
+                language not in {"en", "hi", "tg", "uz"} or not isinstance(text, str) or not text.strip()
+                for language, text in translations.items())):
+            raise FetchError("invalid prepared guidance")
+
+    for manual_id, manual in manuals_by_id.items():
+        for item in manual.get("procedures") or []:
+            if not isinstance(item, dict):
+                raise FetchError("invalid prepared procedure")
+            if item.get("sourceSha256") != manual["sha256"]:
+                continue
+            validate_guidance({**item, "manualId": manual_id})
+            if not isinstance(item.get("procedure"), list) or not item["procedure"]:
+                raise FetchError("invalid prepared procedure")
+            for step in item["procedure"]:
+                if not isinstance(step, dict) or not isinstance(step.get("title"), str) or not step["title"].strip():
+                    raise FetchError("invalid prepared procedure")
+                validate_guidance({**step, "engineModel": item["engineModel"], "anomalyType": item["anomalyType"], "manualId": manual_id})
+    for item in guidance["guidance"]:
+        validate_guidance(item)
+        if "procedure" not in item:
+            continue
+        if not isinstance(item["procedure"], list) or not item["procedure"]:
+            raise FetchError("invalid prepared procedure")
+        for step in item["procedure"]:
+            if not isinstance(step, dict) or not isinstance(step.get("title"), str) or not step["title"].strip():
+                raise FetchError("invalid prepared procedure")
+            validate_guidance({**step, "engineModel": item["engineModel"], "anomalyType": item["anomalyType"], "manualId": item["manualId"]})
     return hashes
 
 
@@ -217,6 +278,8 @@ def validate_vehicle_data(path):
 
 
 def file_manifest(root):
+    if root.is_symlink() or not root.is_dir():
+        return None
     manifest = {}
     for path in sorted(root.rglob("*")):
         if path.is_symlink():
@@ -231,9 +294,67 @@ def file_manifest(root):
     return manifest
 
 
+def prepare_source_directories(root, knowledge_root):
+    protected = [Path("/opt/mehay/data").resolve(), knowledge_root]
+    if root == Path("/") or any(root == item or root in item.parents or item in root.parents for item in protected):
+        raise FetchError("private source directory overlaps application data")
+    current = Path(root.anchor)
+    for part in root.parts[1:]:
+        current /= part
+        try:
+            mode = current.lstat().st_mode
+        except FileNotFoundError:
+            current.mkdir(mode=0o700)
+            if os.geteuid() == 0:
+                os.chown(current, 0, 1000)
+                os.chmod(current, 0o750)
+            continue
+        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise FetchError("private source path contains an unsafe component")
+        if os.geteuid() == 0:
+            info = current.stat()
+            permissions = stat.S_IMODE(info.st_mode)
+            if info.st_uid != 0 or permissions & 0o022:
+                raise FetchError("private source path has an unsafe writable ancestor")
+            if current == root and (info.st_gid != 1000 or permissions & 0o050 != 0o050):
+                raise FetchError("existing private source directory has unsafe ownership or permissions")
+    for directory in (root, root / "releases"):
+        try:
+            mode = directory.lstat().st_mode
+        except FileNotFoundError:
+            directory.mkdir(mode=0o700)
+            if os.geteuid() == 0:
+                os.chown(directory, 0, 1000)
+                os.chmod(directory, 0o750)
+            continue
+        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise FetchError("private source path contains an unsafe component")
+        if os.geteuid() == 0:
+            info = directory.stat()
+            permissions = stat.S_IMODE(info.st_mode)
+            if info.st_uid != 0 or info.st_gid != 1000 or permissions & 0o050 != 0o050 or permissions & 0o027:
+                raise FetchError("existing private source directory has unsafe ownership or permissions")
+
+
+def publish_release(staged, release):
+    for path in [staged, *staged.rglob("*")]:
+        os.chmod(path, 0o750 if path.is_dir() else 0o640)
+        if os.geteuid() == 0:
+            os.chown(path, 0, 1000)
+    staged.rename(release)
+
+
 def main():
     source = os.environ.get("MEHAY_PRIVATE_SOURCE", "").strip()
-    source_root = Path(os.environ.get("MEHAY_PRIVATE_SOURCE_DIR", "/opt/mehay/private-source")).resolve()
+    source_root_setting = os.environ.get("MEHAY_PRIVATE_SOURCE_DIR", "").strip() or "/opt/mehay/private-source"
+    source_root_input = Path(source_root_setting)
+    if not source_root_input.is_absolute() or any(part in {".", ".."} for part in source_root_setting.split("/")):
+        raise FetchError("private source directory must be absolute")
+    source_root = source_root_input.resolve()
+    if source_root == Path("/") or source_root == Path.cwd().resolve():
+        raise FetchError("private source directory is unsafe")
+    if source_root != source_root_input:
+        raise FetchError("private source directory must not traverse symlinks")
     knowledge_root = Path(os.environ.get("MEHAY_KB_DIR", "/opt/mehay/knowledge")).resolve()
     if not source:
         raise FetchError("private source is not configured")
@@ -241,15 +362,8 @@ def main():
     if len(expected_archive) != 64 or any(char not in "0123456789abcdef" for char in expected_archive):
         raise FetchError("private archive SHA-256 is not configured")
     expected = validate_prepared_knowledge(knowledge_root)
-    source_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if os.geteuid() == 0:
-        os.chown(source_root, 0, 1000)
-    os.chmod(source_root, 0o750)
+    prepare_source_directories(source_root, knowledge_root)
     releases = source_root / "releases"
-    releases.mkdir(mode=0o700, exist_ok=True)
-    if os.geteuid() == 0:
-        os.chown(releases, 0, 1000)
-    os.chmod(releases, 0o750)
     with tempfile.TemporaryDirectory(prefix="mehay-private-") as temporary:
         work = Path(temporary)
         incoming, unpacked = work / "incoming", work / "unpacked"
@@ -278,22 +392,34 @@ def main():
         archive_hashes = sorted(hashlib.sha256(path.read_bytes()).hexdigest() for path in archives)
         release_id = hashlib.sha256(("\n".join(sorted(pdf_hashes) + archive_hashes)).encode()).hexdigest()
         release = releases / release_id
-        if not release.exists():
+        try:
+            release_mode = release.lstat().st_mode
+        except FileNotFoundError:
+            release_mode = None
+        if release_mode is not None and not stat.S_ISDIR(release_mode):
+            raise FetchError("existing private release is not a real directory")
+        created_release = release_mode is None
+        if created_release:
             staged = releases / f".stage-{os.getpid()}"
             shutil.rmtree(staged, ignore_errors=True)
             staged.mkdir(mode=0o700)
             shutil.copytree(source_tree, staged / "neurodvs_hackathon_mock_2026-11-16")
             try:
-                staged.rename(release)
+                publish_release(staged, release)
             except FileExistsError:
                 shutil.rmtree(staged)
-        runtime_root = release / "neurodvs_hackathon_mock_2026-11-16"
-        if file_manifest(runtime_root) != expected_files:
+        runtime_root_name = "neurodvs_hackathon_mock_2026-11-16"
+        expected_release_files = {runtime_root_name + "/": "directory"}
+        expected_release_files.update({f"{runtime_root_name}/{name}": digest for name, digest in expected_files.items()})
+        if file_manifest(release) != expected_release_files:
             raise FetchError("existing private release does not match verified archive")
-        for path in [release, *release.rglob("*")]:
-            os.chmod(path, 0o750 if path.is_dir() else 0o640)
-            if os.geteuid() == 0:
-                os.chown(path, 0, 1000)
+        if not created_release and os.geteuid() == 0:
+            for path in [release, *release.rglob("*")]:
+                info = path.stat()
+                permissions = stat.S_IMODE(info.st_mode)
+                needed = 0o050 if path.is_dir() else 0o040
+                if (info.st_uid != 0 or info.st_gid != 1000 or permissions & needed != needed or permissions & 0o027):
+                    raise FetchError("existing private release has unsafe ownership or permissions")
         print(release_id)
 
 

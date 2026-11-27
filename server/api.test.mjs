@@ -73,7 +73,7 @@ test("auth setup is local, atomic, and protected APIs require a session", async 
   assert.equal((await rawRequest("/api/vehicles/van-1/report")).status, 401);
   assert.equal((await rawRequest("/api/assistant", json("POST", {}))).status, 401);
   assert.equal((await rawRequest("/api/neuro/fleet")).status, 401);
-  assert.equal((await rawRequest("/api/neuro/diagnose", json("POST", { vehicleId: "SYNTH-001", sessionId: "PUBCANDIDATECHECKD" }))).status, 401);
+  assert.equal((await rawRequest("/api/neuro/diagnose", json("POST", { vehicleId: "SYNTH-001", sessionId: "SYNTH-SESSION-0003" }))).status, 401);
   assert.equal((await rawRequest("/uploads/private-file.webp")).status, 401);
   const setupBody = { username: "Owner", displayName: "Владелец", password: "Strong test password 1!" };
   assert.equal((await rawRequest("/api/auth/setup", json("POST", { ...setupBody, password: "1234567" }))).status, 400);
@@ -120,28 +120,60 @@ test("vehicle diagnostic chat is shared only with assigned mechanics across sess
   const chat = (session, method, body, cookie, vehicleId = "SYNTH-001") => rawRequest(`/api/neuro/vehicles/${vehicleId}/sessions/${session}/conversation`, {
     method, headers: { cookie, ...(body ? { "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}),
   });
-  const assign = async (userIds) => request("/api/neuro/vehicles/SYNTH-001/assignments", { method: "PUT", ...json("PUT", { userIds }) });
+  let expectedUserIds = [];
+  const assign = async (userIds) => {
+    const response = await request("/api/neuro/vehicles/SYNTH-001/assignments", { method: "PUT", ...json("PUT", { userIds, expectedUserIds }) });
+    if (response.ok) expectedUserIds = [...userIds];
+    return response;
+  };
 
-  assert.equal((await chat("PUBCANDIDATECHECKC", "POST", exchange("11111111-1111-4111-8111-111111111111", "legacy A"), cookies["mech-a"])).status, 201);
+  assert.equal((await chat("SYNTH-SESSION-0002", "POST", exchange("11111111-1111-4111-8111-111111111111", "legacy A"), cookies["mech-a"])).status, 201);
   assert.equal((await assign([users["mech-a"].id, users["mech-b"].id])).status, 200);
-  assert.equal((await chat("PUBCANDIDATECHECKD", "POST", exchange("22222222-2222-4222-8222-222222222222", "team B"), cookies["mech-b"])).status, 201);
-  assert.equal((await chat("PUBCANDIDATECHECKD", "POST", exchange("22222222-2222-4222-8222-222222222222", "team B"), cookies["mech-b"])).status, 200);
-  assert.equal((await chat("PUBCANDIDATECHECKE", "POST", exchange("33333333-3333-4333-8333-333333333333", "private C"), cookies["mech-c"])).status, 201);
+  assert.equal((await chat("SYNTH-SESSION-0003", "POST", exchange("22222222-2222-4222-8222-222222222222", "team B"), cookies["mech-b"])).status, 201);
+  assert.equal((await chat("SYNTH-SESSION-0003", "POST", exchange("22222222-2222-4222-8222-222222222222", "team B"), cookies["mech-b"])).status, 200);
+  assert.equal((await chat("SYNTH-SESSION-0004", "POST", exchange("33333333-3333-4333-8333-333333333333", "private C"), cookies["mech-c"])).status, 201);
   assert.equal((await chat("FAIL-002", "POST", exchange("44444444-4444-4444-8444-444444444444", "other vehicle"), cookies["mech-a"], "SYNTH-002")).status, 201);
-  const bHistory = await (await chat("PUBCANDIDATECHECKE", "GET", null, cookies["mech-b"])).json();
+  const bHistory = await (await chat("SYNTH-SESSION-0004", "GET", null, cookies["mech-b"])).json();
   assert.deepEqual(bHistory.exchanges.map(item => item.question), ["legacy A", "team B"]);
   assert.equal(bHistory.exchanges[0].author.login, "mech-a");
   assert.deepEqual((await (await chat("FAIL-002", "GET", null, cookies["mech-b"], "SYNTH-002")).json()).exchanges, []);
-  const unassigned = await (await chat("PUBCANDIDATECHECKE", "GET", null, cookies["mech-c"])).json();
+  const unassigned = await (await chat("SYNTH-SESSION-0004", "GET", null, cookies["mech-c"])).json();
   assert.deepEqual(unassigned.exchanges.map(item => item.question), ["private C"]);
 
   assert.equal((await assign([users["mech-a"].id])).status, 200);
-  const revokedB = await (await chat("PUBCANDIDATECHECKE", "GET", null, cookies["mech-b"])).json();
+  const staleRegrant = await request("/api/neuro/vehicles/SYNTH-001/assignments", { method: "PUT", ...json("PUT", { userIds: [users["mech-a"].id, users["mech-b"].id], expectedUserIds: [users["mech-a"].id, users["mech-b"].id] }) });
+  assert.equal(staleRegrant.status, 409);
+  assert.deepEqual((await (await request("/api/neuro/vehicles/SYNTH-001/assignments")).json()).assignments.filter(item => item.active).map(item => item.userId), [users["mech-a"].id]);
+  assert.equal((await request("/api/neuro/vehicles/SYNTH-001/assignments", { method: "PUT", ...json("PUT", { userIds: [] }) })).status, 400);
+  const revokedB = await (await chat("SYNTH-SESSION-0004", "GET", null, cookies["mech-b"])).json();
   assert.deepEqual(revokedB.exchanges.map(item => item.question), ["team B"]);
-  const aHistory = await (await chat("PUBCANDIDATECHECKC", "GET", null, cookies["mech-a"])).json();
+  const aHistory = await (await chat("SYNTH-SESSION-0002", "GET", null, cookies["mech-a"])).json();
   assert.deepEqual(aHistory.exchanges.map(item => item.question), ["legacy A", "team B"]);
-  const afterRevoke = await (await chat("PUBCANDIDATECHECKE", "GET", null, cookies["mech-c"])).json();
+  const afterRevoke = await (await chat("SYNTH-SESSION-0004", "GET", null, cookies["mech-c"])).json();
   assert.deepEqual(afterRevoke.exchanges.map(item => item.question), ["private C"]);
+});
+
+test("assignment read and write use the same active mechanic set after a mechanic is promoted", async (t) => {
+  const { request } = await fixture(t);
+  const password = "Mechanic test password 42!";
+  const createMechanic = async (username) => {
+    const response = await request("/api/admin/users", json("POST", { username, displayName: username, password, role: "mechanic" }));
+    assert.equal(response.status, 201);
+    return (await response.json()).user;
+  };
+  const mechanicA = await createMechanic("promoted-mechanic");
+  const mechanicB = await createMechanic("remaining-mechanic");
+  const assign = (userIds, expectedUserIds) => request("/api/neuro/vehicles/SYNTH-001/assignments", {
+    method: "PUT", ...json("PUT", { userIds, expectedUserIds }),
+  });
+  assert.equal((await assign([mechanicA.id, mechanicB.id], [])).status, 200);
+  assert.equal((await request(`/api/admin/users/${mechanicA.id}`, json("PATCH", { role: "admin" }))).status, 200);
+
+  const current = await (await request("/api/neuro/vehicles/SYNTH-001/assignments")).json();
+  assert.deepEqual(current.assignments.map(({ userId }) => userId), [mechanicB.id]);
+  const revoked = await assign([], current.assignments.map(({ userId }) => userId));
+  assert.equal(revoked.status, 200, await revoked.clone().text());
+  assert.deepEqual((await (await request("/api/neuro/vehicles/SYNTH-001/assignments")).json()).assignments, []);
 });
 
 test("8-character passwords are accepted for setup, user creation, and reset", async (t) => {

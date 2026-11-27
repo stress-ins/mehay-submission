@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { validateKnowledge } from "../scripts/validate-knowledge.mjs";
 import { syntheticNeurodvs } from "./fixtures/neurodvs-data.mjs";
+import { syntheticPdf } from "./fixtures/synthetic-pdf.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -19,13 +20,13 @@ async function sourceFixture(temp) {
   const manuals = [];
   for (let i = 0; i < 6; i += 1) {
     const filename = `manual-${i}.pdf`;
-    const bytes = Buffer.from(`synthetic pdf ${i}`);
+    const bytes = syntheticPdf(`Synthetic diagnostic reference ${i}`);
     await writeFile(path.join(source, filename), bytes);
     await writeFile(path.join(knowledge, "pdf", filename), bytes);
-    manuals.push({ id: `manual-${i}`, filename, sha256: createHash("sha256").update(bytes).digest("hex"), pages: [{ pdfPage: 1, text: "fixture" }] });
+    manuals.push({ id: `manual-${i}`, title: `Synthetic manual ${i}`, filename, sha256: createHash("sha256").update(bytes).digest("hex"), engineKeys: ["ямз-236м2"], pageCount: 2, pages: [{ pdfPage: 1, text: "" }, { pdfPage: 2, text: "synthetic fixture reference" }] });
   }
   await writeFile(path.join(knowledge, "index.json"), JSON.stringify({ version: 1, manuals }));
-  await writeFile(path.join(knowledge, "guidance.json"), JSON.stringify({ guidance: [{ id: "fixture" }] }));
+  await writeFile(path.join(knowledge, "guidance.json"), JSON.stringify({ guidance: [{ manualId: "manual-0", pdfPage: 2, engineModel: "ямз-236м2", anomalyType: "F01", text: "synthetic fixture reference", quote: "fixture reference" }] }));
   const archive = path.join(source, "bundle", "organizer.zip");
   const vehicleJson = JSON.stringify(syntheticNeurodvs);
   const script = `from zipfile import ZipFile\np='${archive}'\nfiles={'vendor/mock_ml/app.py':'app = True','vendor/mock_toir/app.py':'app = True','vendor/data/vehicles.json':${JSON.stringify(vehicleJson)}}\nwith ZipFile(p,'w') as z:\n for name,data in files.items(): z.writestr(name,data)\n`;
@@ -41,9 +42,29 @@ test("private loader stages only verified organizer mock runtime and keeps the p
   const temp = await mkdtemp(path.join(os.tmpdir(), "mehay-materials-test-"));
   try {
     const { source, knowledge, archive, archiveBytes } = await sourceFixture(temp);
-    const destination = path.join(temp, "private-source");
+    const canonicalTemp = await realpath(temp);
+    const destination = path.join(canonicalTemp, "private-source");
     const archiveSha256 = createHash("sha256").update(archiveBytes).digest("hex");
     const env = { MEHAY_PRIVATE_SOURCE: source, MEHAY_PRIVATE_SOURCE_DIR: destination, MEHAY_PRIVATE_ARCHIVE_SHA256: archiveSha256, MEHAY_KB_DIR: knowledge };
+    const canonicalKnowledge = await realpath(knowledge);
+    const blockedOverlap = fetch({ ...env, MEHAY_PRIVATE_SOURCE_DIR: path.join(canonicalKnowledge, "private-source"), MEHAY_KB_DIR: canonicalKnowledge });
+    assert.equal(blockedOverlap.status, 1);
+    assert.match(blockedOverlap.stderr, /overlaps application data/);
+    await assert.rejects(readdir(path.join(canonicalKnowledge, "private-source")));
+    const unsafeDestination = fetch({ ...env, MEHAY_PRIVATE_SOURCE_DIR: process.cwd() });
+    assert.equal(unsafeDestination.status, 1);
+    assert.match(unsafeDestination.stderr, /directory is unsafe/);
+    const protectedDestination = fetch({ ...env, MEHAY_PRIVATE_SOURCE_DIR: "/opt/mehay/data" });
+    assert.equal(protectedDestination.status, 1);
+    assert.match(protectedDestination.stderr, /overlaps application data/);
+    const target = path.join(canonicalTemp, "symlink-target");
+    const link = path.join(canonicalTemp, "source-link");
+    await mkdir(target);
+    await symlink(target, link);
+    const linkedDestination = fetch({ ...env, MEHAY_PRIVATE_SOURCE_DIR: link });
+    assert.equal(linkedDestination.status, 1);
+    assert.match(linkedDestination.stderr, /traverse symlinks/);
+    assert.deepEqual(await readdir(target), []);
     const result = fetch(env);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout.trim(), /^[a-f0-9]{64}$/);
@@ -52,6 +73,30 @@ test("private loader stages only verified organizer mock runtime and keeps the p
     const stagedVehicles = await readFile(vehiclePath, "utf8");
     assert.equal(JSON.parse(stagedVehicles).vehicles[0].vehicle_id, "SYNTH-001");
     assert.deepEqual(validateKnowledge(knowledge, vehiclePath), { manuals: 6, vehicles: 50 });
+    const savedRelease = `${releasePath}.saved`;
+    const symlinkTarget = path.join(canonicalTemp, "symlink-release-target");
+    await mkdir(symlinkTarget);
+    await writeFile(path.join(symlinkTarget, "marker"), "untouched");
+    await rename(releasePath, savedRelease);
+    await symlink(symlinkTarget, releasePath);
+    const linkedRelease = fetch(env);
+    assert.equal(linkedRelease.status, 1);
+    assert.match(linkedRelease.stderr, /not a real directory/);
+    assert.equal(await readFile(path.join(symlinkTarget, "marker"), "utf8"), "untouched");
+    await rm(releasePath);
+    await rename(savedRelease, releasePath);
+    const indexPath = path.join(knowledge, "index.json");
+    const index = JSON.parse(await readFile(indexPath, "utf8"));
+    index.manuals[0].pageCount += 1;
+    await writeFile(indexPath, JSON.stringify(index));
+    assert.throws(() => validateKnowledge(knowledge, vehiclePath), /page count does not match/);
+    index.manuals[0].pageCount -= 1;
+    await writeFile(indexPath, JSON.stringify(index));
+    await writeFile(path.join(releasePath, "unexpected-sibling.txt"), "unexpected");
+    const siblingRelease = fetch(env);
+    assert.equal(siblingRelease.status, 1);
+    assert.match(siblingRelease.stderr, /does not match verified archive/);
+    await rm(path.join(releasePath, "unexpected-sibling.txt"));
     await writeFile(vehiclePath, stagedVehicles.replace("SYNTH-001", "CORRUPTED"));
     const corruptedRelease = fetch(env);
     assert.equal(corruptedRelease.status, 1);
@@ -82,4 +127,38 @@ test("private loader stages only verified organizer mock runtime and keeps the p
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
+});
+
+test("interrupted release publication leaves only a retryable staging directory", async () => {
+  const modulePath = path.join(root, "deploy/fetch-private-materials.py");
+  const script = `import importlib.util, pathlib, sys, tempfile
+spec = importlib.util.spec_from_file_location("fetcher", ${JSON.stringify(modulePath)})
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as temp:
+    staged = pathlib.Path(temp) / ".stage"
+    release = pathlib.Path(temp) / "release"
+    staged.mkdir()
+    (staged / "file").write_text("fixture")
+    original = pathlib.Path.rename
+    def interrupt(self, target):
+        if self == staged:
+            raise OSError("simulated interruption")
+        return original(self, target)
+    pathlib.Path.rename = interrupt
+    try:
+        module.publish_release(staged, release)
+        raise AssertionError("publication was not interrupted")
+    except OSError:
+        pass
+    assert not release.exists()
+    assert staged.is_dir() and (staged.stat().st_mode & 0o777) == 0o750
+    assert (staged / "file").stat().st_mode & 0o777 == 0o640
+    pathlib.Path.rename = original
+    module.publish_release(staged, release)
+    assert release.is_dir() and not staged.exists()
+`;
+  const result = spawnSync("python3", ["-c", script], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
 });

@@ -2635,6 +2635,16 @@ th {
 .vehicle-workspace .vehicle-panel {
   max-width: none;
 }
+/* Keep the vehicle detail in document flow; the operational fleet view keeps its fixed-height panels. */
+.vehicle-workspace.dashboard-grid {
+  height: auto;
+  min-height: 0;
+}
+.vehicle-workspace.dashboard-grid > .vehicle-panel {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
 .workspace-lower {
   display: none;
 }

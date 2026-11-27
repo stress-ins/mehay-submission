@@ -73,11 +73,11 @@ if [[ "$1" == inspect && "$*" == *"{{.State.Health.Status}}"* ]]; then
   exit 0
 fi
 if [[ "$1" == pull ]]; then exit 0; fi
-if [[ "$1 $2" == 'compose -f' && "$*" == *' rm -sf mock-ml mock-toir'* ]]; then
+if [[ "$1" == compose && "$*" == *' rm -sf mock-ml mock-toir'* ]]; then
   rm -f "$MOCKS_STATE"
   exit 0
 fi
-if [[ "$1 $2" == 'compose -f' && "$*" == *' up '* ]]; then
+if [[ "$1" == compose && "$*" == *' up '* ]]; then
   count=0; [[ -f "$UP_COUNT" ]] && count=$(cat "$UP_COUNT")
   count=$((count + 1)); printf '%s' "$count" > "$UP_COUNT"
   if [[ "$*" != *'--no-deps mehay'* ]]; then printf '%s' "$MOCK_IMAGE" > "$MOCKS_STATE"; fi
@@ -98,6 +98,7 @@ exit 0
         MOCKS_STATE: mocksStateFile,
         PREVIOUS_IMAGE: previousImage,
         MOCK_IMAGE: mocksImage,
+        MEHAY_PRIVATE_RELEASE: 'a'.repeat(64),
         MEHAY_DEPLOY_ROOT: deployDir,
         PATH: `${binDir}:/usr/bin:/bin`,
       },
@@ -114,6 +115,7 @@ exit 0
         MOCKS_STATE: mocksStateFile,
         PREVIOUS_IMAGE: previousImage,
         MOCK_IMAGE: mocksImage,
+        MEHAY_PRIVATE_RELEASE: 'a'.repeat(64),
         MEHAY_DEPLOY_ROOT: deployDir,
         PATH: `${binDir}:/usr/bin:/bin`,
       },
@@ -121,9 +123,9 @@ exit 0
     assert.equal(second.status, 1);
 
     const calls = await readFile(callsFile, 'utf8');
-    const restores = calls.match(new RegExp(`compose -f deploy/compose\\.yaml up -d --no-build --pull never --no-deps mehay\\|${previousImage.replaceAll(':', '\\:')}\\|${mocksImage.replaceAll(':', '\\:')}`, 'g')) ?? [];
+    const restores = calls.match(new RegExp(`compose --env-file /etc/mehay/mehay\\.env -f deploy/compose\\.legacy\\.yaml up -d --no-build --pull never --no-deps mehay\\|${previousImage.replaceAll(':', '\\:')}\\|${mocksImage.replaceAll(':', '\\:')}`, 'g')) ?? [];
     assert.equal(restores.length, 2);
-    assert.equal((calls.split('compose -f deploy/compose.yaml rm -sf mock-ml mock-toir').length - 1), 2);
+    assert.equal((calls.split('compose --env-file /etc/mehay/mehay.env -f deploy/compose.legacy.yaml rm -sf mock-ml mock-toir').length - 1), 2);
     assert.equal(await readFile(upCountFile, 'utf8'), '4');
     await assert.rejects(readFile(mocksStateFile, 'utf8'), { code: 'ENOENT' });
   } finally {

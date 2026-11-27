@@ -587,7 +587,6 @@ type NeuroDiagnosis = {
     message: string;
     recommendations: { operationKind?: "repair" | "inspection"; procedure?: ManualEvidenceItem[]; text: string; translations?: Partial<Record<"en" | "hi" | "tg" | "uz", string>>; excerpt?: string; stepKey?: string; manual: string; pdfPage: number; url: string }[];
     canCreateTicket: boolean;
-    canCreateDefectoscopyTicket?: boolean;
     ticketBlockReason?: string;
     urgency?: "low" | "medium" | "high";
     risk?: "low" | "medium" | "high";
@@ -691,7 +690,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [ticketId, setTicketId] = useState("");
-  const [ticketPreview, setTicketPreview] = useState<{ previewToken: string; preview: { purpose?: "repair" | "defectoscopy"; vehicleId: string; sessionId: string; engineModel: string; faultCode: string; confidence: { value: number | null; percent: number | null; threshold: number; thresholdPercent: number; label: string }; signalQuality: { value: string; label: string }; urgency: "low" | "medium" | "high"; urgencyMeaning: string; conclusion: string; operations: { text: string; manual: string; pdfPage: number }[]; historicalNote: string; spareParts: string[] } } | null>(null);
+  const [ticketPreview, setTicketPreview] = useState<{ previewToken: string; preview: { vehicleId: string; sessionId: string; engineModel: string; faultCode: string; confidence: { value: number | null; percent: number | null; threshold: number; thresholdPercent: number; label: string }; signalQuality: { value: string; label: string }; urgency: "low" | "medium" | "high"; urgencyMeaning: string; conclusion: string; operations: { text: string; manual: string; pdfPage: number }[]; historicalNote: string; spareParts: string[] } } | null>(null);
   const [draftUrgency, setDraftUrgency] = useState<"low" | "medium" | "high">("medium");
   const [comparison, setComparison] = useState<{ context: string; part: string } | null>(null);
   const [historicalPart, setHistoricalPart] = useState("");
@@ -704,7 +703,6 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
   const [conversation, setConversation] = useState<{ contextKey: string; status: "loading" | "ready" | "error"; exchanges: NeuroExchange[] } | null>(null);
   const [pendingChatByContext, setPendingChatByContext] = useState<Record<string, NeuroExchange[]>>({});
   const conversationRead = useRef(0);
-  const [voiceTicketPurpose, setVoiceTicketPurpose] = useState<"repair" | "defectoscopy">("repair");
   const [planStep, setPlanStep] = useState(0);
   const [planMode, setPlanMode] = useState(false);
   const [performedSteps, setPerformedSteps] = useState<number[]>([]);
@@ -877,11 +875,9 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
       return;
     }
     if (tool === "ticket" || isTicketCommand(query, voiceLanguage)) {
-      const purpose = /дефектовк/iu.test(query) ? "defectoscopy" : "repair";
-      if (purpose === "repair" ? !diagnosis?.guidance.canCreateTicket : !diagnosis?.guidance.canCreateDefectoscopyTicket) {
-        setError(purpose === "defectoscopy" ? "Для заявки на дефектовку нужна проверка из руководства для этого двигателя." : "Для заявки ТОиР сначала нужен подтверждённый диагноз с рекомендациями из руководства.");
+      if (!diagnosis?.guidance.canCreateTicket) {
+        setError("Для заявки ТОиР сначала нужен подтверждённый диагноз с рекомендациями из руководства.");
       } else {
-        setVoiceTicketPurpose(purpose);
         setVoiceTicketPending(bindVoiceTicket(vehicleId, sessionId, diagnosis));
       }
       return;
@@ -891,7 +887,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     if (shouldRoute) {
       setQuestionBusy(true);
       try {
-      const routed = await api<{ tool: "manual" | "vehicle_history" | "history" | "ticket" | "diagnose" | "fallback" }>("/api/neuro/tool-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, vehicleId, sessionId, hasDiagnosis: Boolean(diagnosis), canCreateTicket: Boolean(diagnosis?.guidance.canCreateTicket || diagnosis?.guidance.canCreateDefectoscopyTicket), language: voiceLanguage }) });
+        const routed = await api<{ tool: "manual" | "vehicle_history" | "history" | "ticket" | "diagnose" | "fallback" }>("/api/neuro/tool-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, vehicleId, sessionId, hasDiagnosis: Boolean(diagnosis), canCreateTicket: Boolean(diagnosis?.guidance.canCreateTicket), language: voiceLanguage }) });
         if (!isCurrent()) return;
         routedTool = routed.tool;
       } catch { routedTool = "fallback"; }
@@ -900,9 +896,8 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     if (routedTool === "diagnose") { setQuestionBusy(false); setAnswers(null); setAnswerText(""); setAnswerUnavailable(false); await diagnose(); return; }
     if (routedTool === "ticket") {
       setQuestionBusy(false);
-      const purpose = /дефектовк/iu.test(query) ? "defectoscopy" : "repair";
-      if (purpose === "repair" ? !diagnosis?.guidance.canCreateTicket : !diagnosis?.guidance.canCreateDefectoscopyTicket) setError("Для выбранного типа заявки нет подтверждённой операции из руководства.");
-      else { setVoiceTicketPurpose(purpose); setVoiceTicketPending(bindVoiceTicket(vehicleId, sessionId, diagnosis)); }
+      if (!diagnosis?.guidance.canCreateTicket) setError("Для заявки ТОиР нужен подтверждённый диагноз с рекомендациями из руководства.");
+      else setVoiceTicketPending(bindVoiceTicket(vehicleId, sessionId, diagnosis));
       return;
     }
     if (routedTool === "vehicle_history") {
@@ -982,16 +977,15 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
     finally { if (isCurrent()) setQuestionBusy(false); }
   }
   async function askManual(e: React.FormEvent) { e.preventDefault(); await askManualText(question); }
-  async function prepareTicket(purpose: "repair" | "defectoscopy" = "repair") {
+  async function prepareTicket() {
     setVoiceTicketPending(null);
     if (!diagnosis || !currentVehicle || !currentSession) return;
-    if (purpose === "repair" ? !diagnosis.guidance.canCreateTicket : !diagnosis.guidance.canCreateDefectoscopyTicket) { setError("Для выбранного типа заявки требуется подтверждённое основание из руководства."); return; }
+    if (!diagnosis.guidance.canCreateTicket) { setError("Для заявки требуется подтверждённое качество и основание из руководства."); return; }
     const run = ++diagnosisRun.current;
     const isCurrent = () => run === diagnosisRun.current && activeContext.current === contextKey;
     setBusy(true); setError("");
     try {
-      const operations = diagnosis.guidance.recommendations.filter(item => purpose === "repair" ? item.operationKind === "repair" : item.operationKind === "inspection").map((item) => item.text);
-      const result = await api<{ previewToken: string; preview: NonNullable<typeof ticketPreview>["preview"] }>("/api/neuro/tickets/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicleId, sessionId, urgency: draftUrgency, operations, purpose, ...(purpose === "repair" && historicalPart ? { historicalPart } : {}) }) });
+      const result = await api<{ previewToken: string; preview: NonNullable<typeof ticketPreview>["preview"] }>("/api/neuro/tickets/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicleId, sessionId, urgency: draftUrgency, operations: diagnosis.guidance.recommendations.filter(item => item.operationKind === "repair").map((item) => item.text), ...(historicalPart ? { historicalPart } : {}) }) });
       if (isCurrent()) setTicketPreview(result);
     } catch (cause) { if (isCurrent()) setError(cause instanceof Error ? cause.message : "Не удалось подготовить просмотр заявки ТОиР"); }
     finally { if (isCurrent()) setBusy(false); }
@@ -1090,10 +1084,9 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
         {repairRisk.synthetic && <small>{ui("Демонстрационная запись автопарка")}</small>}
       </aside>}
       {diagnosis?.guidance.ticketBlockReason === "inspection_only" && <p role="status">{ui("Выполните проверку на месте и запишите результат осмотра в карточке машины.")}</p>}
-      {diagnosis?.guidance.canCreateDefectoscopyTicket && <div className="neuro-ticket"><PButton type="button" variant="secondary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket("defectoscopy")}>{ui(ticketId ? "Заявка создана" : "Заявка на дефектовку")}</PButton><span>{ui("Только проверка из руководства; без ремонта и запчастей.")}</span></div>}
       {diagnosis?.guidance.recommendations.length ? <div className="neuro-section"><h3>{ui("Рекомендации")}</h3><ul>{diagnosis.guidance.recommendations.map((item, i) => <li key={`${item.manual}-${item.pdfPage}-${i}`}>{item.text}{item.excerpt && item.excerpt !== item.text ? <details><summary>Основание в руководстве</summary><p className="neuro-excerpt">{item.excerpt}</p></details> : null} <a href={appPath(item.url)} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a> <button type="button" onClick={() => openRecommendationStep(i)}>{ui("Открыть этот шаг в плане работ")}</button></li>)}</ul></div> : null}
       {diagnosis?.guidance.status === "anomaly" && !diagnosis.guidance.canCreateTicket && diagnosis.guidance.ticketBlockReason === "manual_evidence_required" && <aside className="neuro-defectoscopy" role="status"><strong>Нужна дефектовка</strong><p>{diagnosis.guidance.message} Для заявки ТОиР пока нет подтверждённой операции со ссылкой на руководство. Запишите условия замера и результаты осмотра в карточке машины.</p></aside>}
-      {diagnosis?.guidance.canCreateTicket && ticketPreview?.preview.purpose !== "defectoscopy" && <div className="neuro-ticket" style={{ flexWrap: "wrap" }}><label>{ui("Приоритет заявки")}<select value={draftUrgency} disabled={busy || !!ticketPreview || !!ticketId} onChange={(e) => setDraftUrgency(e.target.value as "low" | "medium" | "high")}><option value="high">{ui("Высокий · до следующего рейса")}</option><option value="medium">{ui("Средний · к ближайшему плановому ТО")}</option><option value="low">{ui("Низкий · к следующему осмотру")}</option></select></label><PButton type="button" variant="primary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket()}>{ui(ticketId ? "Заявка создана" : "Подготовить просмотр заявки")}</PButton>{historicalPart && <p>{ui("Кандидат детали из истории:")} <strong>{historicalPart}</strong>. {ui("Требует проверки применимости.")}</p>}{ticketPreview && <section className="neuro-ticket-preview" style={{ flex: "1 1 100%", width: "100%", minWidth: 0, boxSizing: "border-box" }} aria-label={ui("Проверка заявки перед отправкой")}><h3>{ui("Проверьте заявку перед передачей в ТОиР")}</h3><dl><div><dt>{ui("Машина / сессия")}</dt><dd>{ticketPreview.preview.vehicleId} · {ticketPreview.preview.sessionId}</dd></div><div><dt>{ui("Двигатель / код")}</dt><dd>{ticketPreview.preview.engineModel} · {ticketPreview.preview.faultCode}</dd></div><div><dt>{ui("Уверенность / качество")}</dt><dd>{ticketPreview.preview.confidence.percent === null ? ui("не определена") : `${ticketPreview.preview.confidence.percent}%`} (порог {ticketPreview.preview.confidence.thresholdPercent}%) · {ui(ticketPreview.preview.signalQuality.label)}</dd></div><div><dt>{ui("Приоритет")}</dt><dd>{ticketPreview.preview.urgencyMeaning}</dd></div><div><dt>{ui("Заключение")}</dt><dd>{ticketPreview.preview.conclusion}</dd></div><div><dt>{ui("Операции и основания")}</dt><dd><ul>{ticketPreview.preview.operations.map((item, index) => <li key={index}>{item.text} — {item.manual}, стр. {item.pdfPage}</li>)}</ul></dd></div>{ticketPreview.preview.historicalNote && <div><dt>{ui("Историческая подсказка")}</dt><dd>{ticketPreview.preview.historicalNote}</dd></div>}<div><dt>{ui("Запчасти")}</dt><dd>{ticketPreview.preview.spareParts.length ? ticketPreview.preview.spareParts.join(", ") : ui("Не указаны")}</dd></div></dl><p>{ui("Подтверждение отправит ровно этот просмотр. Голосовые команды не меняют приоритет и не подтверждают передачу.")}</p><PButton type="button" variant="primary" disabled={busy || !!ticketId || ticketPreview.preview.vehicleId !== vehicleId || ticketPreview.preview.sessionId !== sessionId} onClick={() => void confirmTicket()}>{ui("Подтвердить и передать в ТОиР")}</PButton> <PButton type="button" variant="secondary" disabled={busy} onClick={() => setTicketPreview(null)}>{ui("Отменить просмотр")}</PButton></section>}{ticketId && <p role="status">{ui("Номер заявки:")} <strong>{ticketId}</strong></p>}</div>}
+      {diagnosis?.guidance.canCreateTicket && <div className="neuro-ticket" style={{ flexWrap: "wrap" }}><label>{ui("Приоритет заявки")}<select value={draftUrgency} disabled={busy || !!ticketPreview || !!ticketId} onChange={(e) => setDraftUrgency(e.target.value as "low" | "medium" | "high")}><option value="high">{ui("Высокий · до следующего рейса")}</option><option value="medium">{ui("Средний · к ближайшему плановому ТО")}</option><option value="low">{ui("Низкий · к следующему осмотру")}</option></select></label><PButton type="button" variant="primary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket()}>{ui(ticketId ? "Заявка создана" : "Подготовить просмотр заявки")}</PButton>{historicalPart && <p>{ui("Кандидат детали из истории:")} <strong>{historicalPart}</strong>. {ui("Требует проверки применимости.")}</p>}{ticketPreview && <section className="neuro-ticket-preview" style={{ flex: "1 1 100%", width: "100%", minWidth: 0, boxSizing: "border-box" }} aria-label={ui("Проверка заявки перед отправкой")}><h3>{ui("Проверьте заявку перед передачей в ТОиР")}</h3><dl><div><dt>{ui("Машина / сессия")}</dt><dd>{ticketPreview.preview.vehicleId} · {ticketPreview.preview.sessionId}</dd></div><div><dt>{ui("Двигатель / код")}</dt><dd>{ticketPreview.preview.engineModel} · {ticketPreview.preview.faultCode}</dd></div><div><dt>{ui("Уверенность / качество")}</dt><dd>{ticketPreview.preview.confidence.percent === null ? ui("не определена") : `${ticketPreview.preview.confidence.percent}%`} (порог {ticketPreview.preview.confidence.thresholdPercent}%) · {ui(ticketPreview.preview.signalQuality.label)}</dd></div><div><dt>{ui("Приоритет")}</dt><dd>{ticketPreview.preview.urgencyMeaning}</dd></div><div><dt>{ui("Заключение")}</dt><dd>{ticketPreview.preview.conclusion}</dd></div><div><dt>{ui("Операции и основания")}</dt><dd><ul>{ticketPreview.preview.operations.map((item, index) => <li key={index}>{item.text} — {item.manual}, стр. {item.pdfPage}</li>)}</ul></dd></div>{ticketPreview.preview.historicalNote && <div><dt>{ui("Историческая подсказка")}</dt><dd>{ticketPreview.preview.historicalNote}</dd></div>}<div><dt>{ui("Запчасти")}</dt><dd>{ticketPreview.preview.spareParts.length ? ticketPreview.preview.spareParts.join(", ") : ui("Не указаны")}</dd></div></dl><p>{ui("Подтверждение отправит ровно этот просмотр. Голосовые команды не меняют приоритет и не подтверждают передачу.")}</p><PButton type="button" variant="primary" disabled={busy || !!ticketId || ticketPreview.preview.vehicleId !== vehicleId || ticketPreview.preview.sessionId !== sessionId} onClick={() => void confirmTicket()}>{ui("Подтвердить и передать в ТОиР")}</PButton> <PButton type="button" variant="secondary" disabled={busy} onClick={() => setTicketPreview(null)}>{ui("Отменить просмотр")}</PButton></section>}{ticketId && <p role="status">{ui("Номер заявки:")} <strong>{ticketId}</strong></p>}</div>}
       </>}
     </section>
     <section className="panel full-panel neuro-qa"><div><div className="eyebrow">{ui("ОТВЕТЫ С ОПОРОЙ НА РУКОВОДСТВА")}</div><h2>{ui("Сообщение механику")}</h2><p>{ui("Голосовые команды выполняются сразу; для текста в поле используйте кнопку отправки.")}</p></div>
@@ -1106,7 +1099,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
           if (voiceConfirmation(normalized, voiceLanguage)) {
             const current = matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis);
             setVoiceTicketPending(null);
-            if (current) void prepareTicket(voiceTicketPurpose);
+            if (current) void prepareTicket();
             else setError("Контекст изменился. Повторите диагностику перед созданием заявки.");
             return;
           }
@@ -1164,9 +1157,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
         }
         if (isTicketCommand(phrase, voiceLanguage)) {
           voiceReplyPending.current = false;
-          const purpose = /дефектовк/iu.test(phrase) ? "defectoscopy" : "repair";
-          if (purpose === "repair" ? !diagnosis?.guidance.canCreateTicket : !diagnosis?.guidance.canCreateDefectoscopyTicket) { setError("Для выбранного типа заявки нет подтверждённой операции из руководства."); return; }
-          setVoiceTicketPurpose(purpose);
+          if (!diagnosis?.guidance.canCreateTicket) { setError("Для заявки ТОиР сначала нужен подтверждённый диагноз с рекомендациями из руководства."); return; }
           setVoiceTicketPending(bindVoiceTicket(vehicleId, sessionId, diagnosis));
           return;
         }
@@ -1176,8 +1167,7 @@ function NeuroDvsPage({ routerConfigured, cardId, requestedSession, onProcureHis
         void askManualText(phrase);
       }} />
       {(voiceFeedback || error || busy || questionBusy) && <p className="voice-result" role="status">{error ? ui(error) : (busy || questionBusy ? ui("Обрабатываю команду…") : ui(voiceFeedback))}</p>}
-      {voiceTicketPending && <div className="context-empty" role="status"><p>{ui("Команда распознана для")} {currentVehicle?.vehicle_id} · {sessionId}. {ui("Просмотр откроется для проверки; голосом отправить заявку нельзя.")}</p><PButton type="button" variant="primary" disabled={busy || !matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis)} onClick={() => { if (matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis)) void prepareTicket(voiceTicketPurpose); else { setVoiceTicketPending(null); setError("Контекст изменился. Повторите диагностику перед созданием заявки."); } }}>{ui(voiceTicketPurpose === "defectoscopy" ? "Открыть просмотр дефектовки" : "Открыть просмотр заявки")}</PButton> <PButton type="button" variant="secondary" onClick={() => setVoiceTicketPending(null)}>{ui("Отмена")}</PButton></div>}
-      {ticketPreview?.preview.purpose === "defectoscopy" && <section className="neuro-ticket-preview" aria-label={ui("Просмотр заявки на дефектовку")}><h3>{ui("Заявка на дефектовку · проверьте перед передачей в ТОиР")}</h3><p>{ticketPreview.preview.vehicleId} · {ticketPreview.preview.sessionId} · {ticketPreview.preview.engineModel}</p><p>{ticketPreview.preview.conclusion}</p><h4>{ui("Проверки и основания из руководства")}</h4><ul>{ticketPreview.preview.operations.map((item, index) => <li key={index}>{item.text} — {item.manual}, стр. {item.pdfPage}</li>)}</ul><p>{ui("Запчасти: не указаны. Ремонтные операции не включены.")}</p><PButton type="button" variant="primary" disabled={busy || !!ticketId || ticketPreview.preview.vehicleId !== vehicleId || ticketPreview.preview.sessionId !== sessionId} onClick={() => void confirmTicket()}>{ui("Подтвердить и передать в ТОиР")}</PButton> <PButton type="button" variant="secondary" disabled={busy} onClick={() => setTicketPreview(null)}>{ui("Отменить просмотр")}</PButton></section>}
+      {voiceTicketPending && <div className="context-empty" role="status"><p>{ui("Команда распознана для")} {currentVehicle?.vehicle_id} · {sessionId}. {ui("Просмотр откроется для проверки; голосом отправить заявку нельзя.")}</p><PButton type="button" variant="primary" disabled={busy || !matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis)} onClick={() => { if (matchesVoiceTicket(voiceTicketPending, vehicleId, sessionId, diagnosis)) void prepareTicket(); else { setVoiceTicketPending(null); setError("Контекст изменился. Повторите диагностику перед созданием заявки."); } }}>{ui("Открыть просмотр заявки")}</PButton> <PButton type="button" variant="secondary" onClick={() => setVoiceTicketPending(null)}>{ui("Отмена")}</PButton></div>}
       <form onSubmit={(e) => void askManual(e)}><label>{ui("Вопрос или команда")}<textarea rows={3} maxLength={500} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder={ui("Можно ли своим ходом перегнать машину на базу?")} /></label><PButton type="submit" variant="primary" disabled={!currentVehicle || question.length < 3 || questionBusy || busy}>{ui(questionBusy ? "Ищем в руководствах…" : "Отправить")}</PButton></form>
       {answerUnavailable && <p className="auth-error" role="status">{ui("Сервис подготовки ответа недоступен. Откройте поиск по руководствам в общем помощнике, чтобы посмотреть страницы самостоятельно.")}</p>}
       {answerText && answerText !== voiceFeedback && <p className="neuro-answer" role="status">{answerText}</p>}

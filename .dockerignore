@@ -1,0 +1,16 @@
+node_modules
+dist
+data
+.git
+.env*
+*.log
+
+.venv
+materials
+resources/manuals
+resources/neurodvs/
+knowledge
+**/*.pdf
+*.mp4
+*.webm
+**/guidance.json

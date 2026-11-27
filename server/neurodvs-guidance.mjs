@@ -22,6 +22,11 @@ export function createGuidanceRepository(records, { manuals, getManualById, getP
     if (typeof item.engineModel !== "string" || typeof item.anomalyType !== "string" || !catalog.has(item.manualId) ||
       !Number.isSafeInteger(item.pdfPage) || item.pdfPage < 1 || typeof item.text !== "string" || !item.text.trim() ||
       typeof item.quote !== "string" || !item.quote.trim() || !manual?.engineKeys.includes(item.engineModel.toLocaleLowerCase("ru")) ||
+      (item.sourceSha256 != null && item.sourceSha256 !== manual.sha256) ||
+      (item.complaintTerms != null && (!Array.isArray(item.complaintTerms) || !item.complaintTerms.length ||
+        item.complaintTerms.some((term) => typeof term !== "string" || !term.trim()))) ||
+      (item.supersedes != null && (!Array.isArray(item.supersedes) || item.supersedes.some((entry) =>
+        typeof entry?.manualId !== "string" || !Number.isSafeInteger(entry.pdfPage) || entry.pdfPage < 1))) ||
       (item.translations != null && (typeof item.translations !== "object" || Array.isArray(item.translations) ||
         Object.entries(item.translations).some(([language, text]) => !["en", "hi", "tg", "uz"].includes(language) || typeof text !== "string" || !text.trim()))) ||
       typeof page !== "string" || !page.toLocaleLowerCase("ru").replace(/\s+/gu, " ").includes(item.quote.toLocaleLowerCase("ru").replace(/\s+/gu, " "))) {
@@ -108,7 +113,15 @@ export function createGuidanceRepository(records, { manuals, getManualById, getP
     }
   }
   function recommendationsFor(vehicle, diagnosis) {
-    return mergedRecords.filter(({ engineModel, anomalyType }) => engineModel === vehicle.engine_model && anomalyType === diagnosis.anomaly_type)
+    const normalizeComplaint = (value) => value.toLocaleLowerCase("ru").replace(/ё/gu, "е").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const complaint = typeof diagnosis.description === "string" ? normalizeComplaint(diagnosis.description) : "";
+    const matchesComplaint = ({ complaintTerms }) => !complaintTerms ||
+      (complaint && complaintTerms.every((term) => complaint.includes(normalizeComplaint(term))));
+    const matching = mergedRecords.filter((item) =>
+      item.engineModel === vehicle.engine_model && item.anomalyType === diagnosis.anomaly_type && matchesComplaint(item));
+    const superseded = new Set(matching.flatMap(({ supersedes }) => supersedes || [])
+      .map(({ manualId, pdfPage }) => `${manualId}#${pdfPage}`));
+    return matching.filter(({ manualId, pdfPage }) => !superseded.has(`${manualId}#${pdfPage}`))
       .map(item => ({ ...evidence(item), ...(item.procedure ? { procedure: item.procedure.map(step => ({ ...evidence(step), title: step.title })) } : {}) }));
   }
   return { recommendationsFor };

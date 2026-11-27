@@ -10,7 +10,7 @@ import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { searchManuals, manualById, getManuals, manualDirectory, isValveTimingQuestion } from "./manuals.mjs";
 import { fleet as diagnosticFleet, repairExperience, seedRepairHistory } from "./repair-experience.mjs";
-import { answerFromManuals, isYamzMainBearingTorqueQuestion, manualLanguages, translateManualText, yamzMainBearingTorqueAssessment } from "./manual-answer.mjs";
+import { answerFromManuals, isRoadworthinessQuestion, isYamzMainBearingTorqueQuestion, manualLanguages, roadworthinessAnswer, translateManualText, yamzMainBearingTorqueAssessment } from "./manual-answer.mjs";
 import { mountNeuroDvs, publicDiagnosis, vehicleMeasurementPriority } from "./neurodvs.mjs";
 import { createManualPageRenderer, ManualPageError } from "./manual-page-renderer.mjs";
 import { buildAssistantEvidence, classifySearchOrigin, findRecordMarkers, hasTorqueRecommendation, isTorqueQuery, resolveAssistantCitations, sanitizePriorEvidenceMarkers, scopedWebSearchQuery, searchCitationMatchesScope } from "./assistant-evidence.mjs";
@@ -1322,11 +1322,12 @@ export function createApp({
     const fault = answerMode && typeof req.body.fault === "string" ? req.body.fault.slice(0, 160) : "";
     const language = req.body.language ?? "ru";
     if (!manualLanguages.has(language)) return fail(res, 400, "invalid_manual_language");
+    const prior = req.body.previousQuestion;
+    if (prior != null && !validText(prior, 2000)) return fail(res, 400, "invalid_previous_question");
+    if (answerMode && isRoadworthinessQuestion(query)) return res.json({ answer: roadworthinessAnswer(language), results: [] });
     const translate = answerMode && language !== "ru";
     const searchQuery = translate ? await translateManualText(query, "ru") : query;
     if (!searchQuery) return res.json({ results: [], answerUnavailable: true });
-    const prior = req.body.previousQuestion;
-    if (prior != null && !validText(prior, 2000)) return fail(res, 400, "invalid_previous_question");
     const followUp = /(?:^а\s|^и\s|эт(?:о|им|ом|от|ой|их)|таком|каким моментом|в каком порядке|сколько оборотов|далее|дальше|опасно|своим ходом|после этого)/iu.test(searchQuery.trim());
     const previousQuestion = answerMode && prior && followUp
       ? (translate ? await translateManualText(prior, "ru") : prior)
@@ -2130,6 +2131,7 @@ export function createApp({
     if (requestDraft !== null && (!requestDraft || typeof requestDraft !== "object" || Array.isArray(requestDraft) || (requestDraft.type !== undefined && !["repair", "procurement", "selection"].includes(requestDraft.type)) || (requestDraft.title !== undefined && (typeof requestDraft.title !== "string" || requestDraft.title.length > 180)) || (requestDraft.description !== undefined && (typeof requestDraft.description !== "string" || requestDraft.description.length > 2000)) || !normalizeParts(requestDraft.parts || []) || !normalizeWorkItems(requestDraft.workItems || []))) return fail(res, 400, "invalid_request_draft");
     if (!v && requestDraft !== null) return fail(res, 400, "invalid_request_draft");
     if (!v) {
+      if (isRoadworthinessQuestion(b.message)) return res.json({ answer: roadworthinessAnswer(b.language), sources: [], model: process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini", evidence: { records: [], citedRecordIds: [], unresolvedCitations: [], technicalCards: [], checkedAt: new Date().toISOString(), truncated: false } });
       const key = process.env.OPENROUTER_API_KEY;
       if (!key) return fail(res, 503, "assistant_unavailable");
       const model = process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini";
@@ -2175,6 +2177,7 @@ export function createApp({
       evidence.unresolvedCitations = ambiguousMarkers;
       return res.json({ answer: `Метка ${ambiguousMarkers.map((id) => `[${id}]`).join(", ")} могла относиться к другому реестру прошлого ответа. Уточните название работы, заявки или диагностики, чтобы я открыл нужную запись.`, sources: [], model: process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini", evidence });
     }
+    if (isRoadworthinessQuestion(b.message)) return res.json({ answer: roadworthinessAnswer(b.language), sources: [], model: process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini", evidence });
     const engineModel = normalizeEngineVariant(b.engineModel) || "";
     const vehicleEngineVariant = normalizeEngineVariant(v.engine);
     const manualEngineMatchesVehicle = Boolean(engineModel && vehicleEngineVariant === engineModel);

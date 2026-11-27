@@ -40,6 +40,98 @@ test("a short follow-up retrieves the preceding operation for the selected engin
   assert.equal(input.query, "Как проверить температурный датчик?");
 });
 
+test("assistant refuses movement decisions without direct evidence in shared and vehicle chats", async t => {
+  let manualSearchCalls = 0, modelCalls = 0;
+  const oldFetch = globalThis.fetch, oldKey = process.env.OPENROUTER_API_KEY;
+  process.env.OPENROUTER_API_KEY = "test-key";
+  globalThis.fetch = (url, options) => {
+    if (String(url).includes("openrouter.ai")) {
+      modelCalls++;
+      return Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: "В двигателе могут быть неисправны гидротолкатели." } }] }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    return oldFetch(url, options);
+  };
+  t.after(() => {
+    globalThis.fetch = oldFetch;
+    if (oldKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = oldKey;
+  });
+  const { request } = await fixture(t, async () => {
+    manualSearchCalls++;
+    return [{ manual: { id: "wrong", title: "Unrelated manual" }, pdfPage: 4, text: "Гидротолкатели двигателя." }];
+  });
+  const { vehicles } = await (await request("/api/bootstrap")).json();
+  const variants = [
+    ["ru", "Можно ли своим ходом перегнать машину на базу?", /механик после осмотра/iu],
+    ["en", "Can I drive it to the base?", /mechanic must assess/i],
+    ["hi", "क्या मैं गाड़ी चलाकर ले जा सकता हूँ?", /मैकेनिक करेगा/],
+    ["tg", "Оё мошинро бо қувваи худ бурдан мумкин аст?", /механик баъди/],
+    ["uz", "Avtomobilni o'z yurishi bilan olib borish mumkinmi?", /mexanik ko‘rikdan/],
+  ];
+  for (const [language, message, expected] of variants) {
+    for (const vehicleId of [null, vehicles[0].id]) {
+      const response = await request("/api/assistant", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ vehicleId, language, message }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.match(body.answer, expected);
+      assert.doesNotMatch(body.answer, /гидротолкател/i);
+      assert.deepEqual(body.sources, []);
+      assert.ok(Array.isArray(body.evidence.records));
+    }
+  }
+  assert.equal(modelCalls, 0);
+  assert.equal(manualSearchCalls, 0);
+  const mechanicQuestions = [
+    ["ru", "Как проверить давление масла?"], ["en", "How do I check oil pressure?"],
+    ["hi", "क्या इंजन चालू होने पर दबाव जांचें?"], ["tg", "Чӣ тавр фишори равғанро санҷидан мумкин аст?"],
+    ["uz", "Dvigatel moy bosimini qanday tekshirish mumkin?"],
+  ];
+  for (const [language, message] of mechanicQuestions) {
+    const response = await request("/api/assistant", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ language, message }) });
+    assert.equal(response.status, 200);
+    assert.match((await response.json()).answer, /неисправны гидротолкатели/iu, message);
+  }
+  assert.equal(modelCalls, 5);
+  assert.equal(manualSearchCalls, 0);
+});
+
+test("manual search recognizes original-language roadworthiness before translation, key, or retrieval", async t => {
+  let manualSearchCalls = 0;
+  const oldKey = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  t.after(() => { if (oldKey === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = oldKey; });
+  const { request } = await fixture(t, async () => { manualSearchCalls++; return []; });
+  const positive = [
+    ["ru", "Можно ли своим ходом доехать до базы?", /механик после осмотра/iu],
+    ["en", "Can I drive the car to the workshop?", /mechanic must assess/i],
+    ["hi", "क्या मैं गाड़ी चलाकर ले जा सकता हूँ?", /मैकेनिक करेगा/],
+    ["tg", "Оё мошинро бо қувваи худ бурдан мумкин аст?", /механик баъди/],
+    ["uz", "Avtomobilni o'z yurishi bilan olib borish mumkinmi?", /mexanik ko‘rikdan/],
+  ];
+  for (const [language, query, expected] of positive) {
+    const response = await request("/api/manuals/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ engineModel: "ЯМЗ-536", query, answer: true, language }) });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.match(body.answer, expected);
+    assert.deepEqual(body.results, []);
+    assert.equal(manualSearchCalls, 0, query);
+  }
+  const negative = [
+    ["ru", "Как проверить давление масла?"], ["en", "How do I check oil pressure?"],
+    ["hi", "क्या इंजन चालू होने पर दबाव जांचें?"], ["tg", "Чӣ тавр фишори равғанро санҷидан мумкин аст?"],
+    ["uz", "Dvigatel moy bosimini qanday tekshirish mumkin?"],
+  ];
+  for (const [language, query] of negative) {
+    const response = await request("/api/manuals/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ engineModel: "ЯМЗ-536", query, answer: true, language }) });
+    assert.equal(response.status, 200);
+    assert.equal("answer" in await response.json(), false, query);
+  }
+  assert.equal(manualSearchCalls, 1, "the Russian mechanic question should proceed to manual retrieval");
+});
+
 test("manual retrieval is keyless, engine-scoped, cited by PDF page, and protected", async (t) => {
   let requested;
   const { raw, request } = await fixture(t, async (input) => {

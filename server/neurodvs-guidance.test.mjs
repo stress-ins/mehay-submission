@@ -64,7 +64,7 @@ test("current manual-index procedure attaches to curated guidance with its own s
   const step = { ...item, title: "Verified step" };
   const procedure = { ...item, sourceSha256: "current-pdf-sha", procedure: [step] };
   const manualsWithProcedure = [{ ...manuals[0], sha256: "current-pdf-sha", procedures: [procedure] }];
-  const repository = createGuidanceRepository([item], { ...options, manuals: manualsWithProcedure });
+  const repository = createGuidanceRepository([item], { ...options, manuals: manualsWithProcedure, getManualById: () => manualsWithProcedure[0] });
   const [result] = repository.recommendationsFor({ engine_model: item.engineModel }, { anomaly_type: item.anomalyType });
   assert.equal(result.text, item.text);
   assert.equal(result.procedure[0].title, "Verified step");
@@ -83,4 +83,34 @@ test("current SHA does not bypass source-page quote validation", () => {
   const procedure = { ...item, sourceSha256: "current-pdf-sha", procedure: [{ ...item, title: "Bad quote", quote: "Not on page" }] };
   const manualsWithProcedure = [{ ...manuals[0], sha256: "current-pdf-sha", procedures: [procedure] }];
   assert.throws(() => createGuidanceRepository([item], { ...options, manuals: manualsWithProcedure }), /Invalid verified/);
+});
+
+test("private schema fields scope synthetic guidance while old-format entries remain the fallback", () => {
+  const sourceSha256 = "a".repeat(64);
+  const privateManual = { ...manuals[0], engineKeys: ["test-200"], sha256: sourceSha256 };
+  const legacy = { ...item, engineModel: "TEST-200", manualId: "sample-guide", pdfPage: 1, quote: "Synthetic fallback source." };
+  const contextual = {
+    ...item, engineModel: "TEST-200", manualId: "sample-guide", pdfPage: 2,
+    quote: "Synthetic contextual source.", sourceSha256, complaintTerms: ["brake", "noise"],
+    supersedes: [{ manualId: "sample-guide", pdfPage: 1 }],
+  };
+  const repository = createGuidanceRepository([legacy, contextual], {
+    ...options,
+    manuals: [privateManual],
+    getManualById: (id) => id === "sample-guide" ? { ...privateManual, filename: "sample.pdf" } : null,
+    getPageText: (_id, page) => page === 1 ? legacy.quote : page === 2 ? contextual.quote : null,
+  });
+  const matching = repository.recommendationsFor({ engine_model: "TEST-200" }, {
+    anomaly_type: "F01", description: "BRAKE squeal, unusual noise",
+  });
+  assert.deepEqual(matching.map(({ pdfPage }) => pdfPage), [2]);
+  assert.equal("complaintTerms" in matching[0], false);
+  assert.equal("sourceSha256" in matching[0], false);
+  assert.equal("supersedes" in matching[0], false);
+  assert.deepEqual(repository.recommendationsFor({ engine_model: "TEST-200" }, { anomaly_type: "F01" }).map(({ pdfPage }) => pdfPage), [1]);
+  assert.deepEqual(repository.recommendationsFor({ engine_model: "TEST-201" }, { anomaly_type: "F01", description: "brake noise" }), []);
+  assert.throws(() => createGuidanceRepository([{ ...contextual, sourceSha256: "b".repeat(64) }], {
+    ...options, manuals: [privateManual], getManualById: () => privateManual,
+    getPageText: (_id, page) => page === 2 ? contextual.quote : null,
+  }), /Invalid verified guidance entry/);
 });

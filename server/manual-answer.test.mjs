@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { answerFromManuals, isYamzMainBearingTorqueQuestion, translateManualText, yamzMainBearingTorqueAssessment } from "./manual-answer.mjs";
+import { answerFromManuals, isRoadworthinessQuestion, isYamzMainBearingTorqueQuestion, translateManualText, yamzMainBearingTorqueAssessment } from "./manual-answer.mjs";
 
 test("sourced answers display only the selected original PDF lines", async t => {
   const original = process.env.OPENROUTER_API_KEY;
@@ -21,13 +21,30 @@ test("sourced answers display only the selected original PDF lines", async t => 
   assert.deepEqual(await answerFromManuals({...query, fetchImpl: async () => new Response(null, {status:503})}), { results: [], answerUnavailable:true });
 });
 
+test("roadworthiness recognition covers movement decisions without catching mechanic questions", () => {
+  for (const query of [
+    "Можно ли своим ходом доехать до базы?",
+    "Can I drive the car to the workshop?",
+    "क्या मैं गाड़ी चलाकर ले जा सकता हूँ?",
+    "Оё мошинро бо қувваи худ бурдан мумкин аст?",
+    "Avtomobilni o'z yurishi bilan olib borish mumkinmi?",
+  ]) assert.equal(isRoadworthinessQuestion(query), true, query);
+  for (const query of [
+    "Как проверить давление масла?",
+    "How do I check the oil pressure?",
+    "क्या इंजन चालू होने पर दबाव जांचें?",
+    "Чӣ тавр фишори равғанро санҷидан мумкин аст?",
+    "Dvigatel moy bosimini qanday tekshirish mumkin?",
+  ]) assert.equal(isRoadworthinessQuestion(query), false, query);
+});
+
 test("repair excerpts cannot authorize driving a vehicle with a fault", async () => {
   const result = await answerFromManuals({
     pages: [{ text: "Низкое давление масла\nПерегрев\nЗаглушить двигатель" }],
     query: "Можно ли своим ходом перегнать машину на базу?",
     fetchImpl: () => { throw new Error("unexpected provider request"); },
   });
-  assert.deepEqual(result, { results: [] });
+  assert.deepEqual(result, { answer: "По имеющимся данным нельзя определить, можно ли перегонять автомобиль своим ходом. Допуск к движению оценивает механик после осмотра; этот ответ не подтверждает безопасность движения.", results: [] });
 });
 
 test("translation preserves numeric values from the manual", async t => {

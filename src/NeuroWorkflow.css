@@ -31,17 +31,32 @@
 .neuro-evidence details > summary:focus-visible { outline: 2px solid #568976; outline-offset: 2px; }
 .neuro-evidence details > summary svg { flex: none; }
 .neuro-turn { padding: .75rem; margin-top: .65rem; border-radius: .5rem; background: var(--green-soft, #f4f6f8); color: var(--ink, #1f2937); }
-.neuro-turn p { margin: .35rem 0; white-space: pre-wrap; }
+.neuro-turn p { max-width: 72ch; margin: .35rem 0; color: var(--ink, #1f2937); font-size: 1rem; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.neuro-turn-answer { max-width: 72ch; color: var(--ink, #1f2937); font-size: 1rem; line-height: 1.65; overflow-wrap: anywhere; }
+.neuro-turn-answer > :first-child { margin-top: .35rem; }
+.neuro-turn-answer > :last-child { margin-bottom: .35rem; }
+.neuro-chat-pending { display: flex; align-items: center; gap: .65rem; }
+.neuro-chat-typing { display: inline-flex; gap: .2rem; align-items: center; }
+.neuro-chat-typing i { width: .35rem; height: .35rem; border-radius: 50%; background: currentColor; animation: neuro-chat-dot 1s ease-in-out infinite; }
+.neuro-chat-typing i:nth-child(2) { animation-delay: .15s; }
+.neuro-chat-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes neuro-chat-dot { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-.2rem); } }
+.neuro-qa { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; }
+.neuro-qa-thread { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.neuro-qa-composer { flex: 0 0 auto; margin-top: auto; padding-top: .75rem; }
+.neuro-chat-history { overflow: visible; }
+.neuro-chat-history > h3 { position: sticky; top: 0; z-index: 1; padding-block: .35rem; background: var(--paper, #fff); }
+.neuro-qa .neuro-answer { max-width: 72ch; color: var(--ink, #1f2937); font-size: 1rem; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .neuro-step-plan li { margin-block: .8rem; }
 
-.workshop-step-body { margin: 1rem 0 .65rem; }
-.workshop-step-body h4 { margin: 0 0 .3rem; font-family: inherit; font-size: 1.2rem; }
-.workshop-step-body small { display: block; margin: .25rem 0 .5rem; color: var(--muted); font-size: .9rem; }
-.workshop-step-body p { width: 100%; max-width: none; margin: 0; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workshop-step-body { min-width: 0; margin: 1rem 0 .65rem; }
+.workshop-step-body h4 { margin: 0 0 .45rem; color: var(--ink, #1f2937); font-family: inherit; font-size: 1.25rem; line-height: 1.35; }
+.workshop-step-body small { display: block; margin: .25rem 0 .5rem; color: var(--ink, #1f2937); font-size: .95rem; }
+.workshop-step-body p { width: 100%; max-width: none; margin: 0; color: var(--ink, #1f2937); font-size: clamp(1.0625rem, 1rem + .15vw, 1.2rem); line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; hyphens: auto; }
 .workshop-step-body p strong { white-space: nowrap; }
-.workshop-manual-source { margin-top: 1rem; padding: .85rem 1rem; border-inline-start: 3px solid var(--line); color: var(--ink); background: var(--green-soft, #f4f6f8); }
-.workshop-manual-source blockquote { margin: .45rem 0 0; font: inherit; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workshop-manual-source { margin-top: 1rem; padding: .85rem 1rem; border-inline-start: 4px solid var(--ink, #1f2937); border-radius: .35rem; color: var(--ink); background: var(--green-soft, #f4f6f8); }
+.workshop-manual-source blockquote { margin: .45rem 0 0; color: var(--ink, #1f2937); font: inherit; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; hyphens: auto; }
 .neuro-result .neuro-excerpt, .neuro-result .neuro-answer { max-width: none; color: var(--ink); font-size: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .timing-marks-card { flex: 1 1 100%; min-width: 0; margin: 18px 0; padding: 16px; border: 1px solid var(--line); border-inline-start: 4px solid var(--verdict-warning, #805300); border-radius: 12px; background: var(--paper); color: var(--ink); }
 .timing-marks-card h3 { margin: 0 0 8px; color: var(--ink); }

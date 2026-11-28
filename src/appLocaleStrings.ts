@@ -3792,6 +3792,8 @@ export const appLocaleStrings: Record<string, Record<AppLocaleCode, string>> = {
   "Метки не совпадают": { en: "Marks do not match", hi: "निशान मेल नहीं खाते", tg: "Нишонаҳо мувофиқат намекунанд", uz: "Belgilar mos emas" },
   "Общий вопрос": { en: "General question", hi: "सामान्य प्रश्न", tg: "Саволи умумӣ", uz: "Umumiy savol" },
   "Ширина чата": { en: "Chat width", hi: "चैट की चौड़ाई", tg: "Паҳнои чат", uz: "Chat kengligi" },
+  "Ищем ответ в руководствах…": { en: "Searching the manuals…", hi: "मैनुअल में जवाब खोज रहे हैं…", tg: "Дар дастурҳо ҷавоб меҷӯем…", uz: "Qo‘llanmalardan javob izlayapmiz…" },
+  "Ответ не удалось получить. Попробуйте ещё раз.": { en: "Couldn’t get an answer. Please try again.", hi: "जवाब नहीं मिल पाया। फिर कोशिश करें।", tg: "Ҷавоб гирифта нашуд. Боз кӯшиш кунед.", uz: "Javob olinmadi. Qayta urinib ko‘ring." },
   "Задайте общий вопрос": { en: "Ask a general question", hi: "सामान्य प्रश्न पूछें", tg: "Саволи умумӣ диҳед", uz: "Umumiy savol bering" },
   "Можно задать вопрос по работе сервиса, диагностике или ремонту.": { en: "Ask about using the service, diagnostics, or repairs.", hi: "सेवा के उपयोग, निदान या मरम्मत के बारे में पूछें।", tg: "Дар бораи истифодаи хизматрасонӣ, ташхис ё таъмир савол диҳед.", uz: "Xizmatdan foydalanish, diagnostika yoki taʼmirlash haqida so‘rang." },
   "Ваш вопрос": { en: "Your question", hi: "आपका प्रश्न", tg: "Саволи шумо", uz: "Savolingiz" },

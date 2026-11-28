@@ -3921,7 +3921,13 @@ body, button, input, select, textarea { font-family: system-ui, -apple-system, "
 .neuro-quick-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .neuro-quick-nav button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 9px 13px; border: 1px solid #24584f; border-radius: 5px; background: #24584f; color: #fff; font: inherit; font-weight: 650; cursor: pointer; }
 .neuro-quick-nav button:hover { background: #173f38; border-color: #173f38; }
-.neuro-quick-nav button:focus-visible { outline: 3px solid #d49a42; outline-offset: 2px; }
+.shell .neuro-quick-nav button:focus-visible { outline: 3px solid #1769aa; outline-offset: 2px; }
+.shell .neuro-quick-nav button:hover,
+.shell .neuro-quick-nav button:focus-visible,
+.shell .neuro-quick-nav button:active { color: #fff; background: #173f38; }
+.shell .neuro-quick-nav button:hover svg,
+.shell .neuro-quick-nav button:focus-visible svg,
+.shell .neuro-quick-nav button:active svg { color: currentColor; }
 .diagnosis-background { margin-top: 12px; }
 .diagnosis-background summary { display: flex; align-items: center; gap: 7px; min-height: 44px; cursor: pointer; color: var(--ink); font-weight: 650; }
 .diagnosis-background summary svg { flex: none; color: var(--green); }
@@ -4036,6 +4042,10 @@ body, button, input, select, textarea { font-family: system-ui, -apple-system, "
 .shell[data-theme="dark"] .neuro-result .neuro-answer { color: var(--ink); background: #202725; }
 .shell[data-theme="dark"] .neuro-quick-nav button { color: #fff; background: #24584f; border-color: #6ea895; }
 .shell[data-theme="dark"] .neuro-quick-nav button:hover { background: #306b5e; }
+.shell[data-theme="dark"] .neuro-quick-nav button:hover,
+.shell[data-theme="dark"] .neuro-quick-nav button:focus-visible,
+.shell[data-theme="dark"] .neuro-quick-nav button:active { color: #fff; background: #306b5e; }
+.shell[data-theme="dark"] .neuro-quick-nav button:focus-visible { outline: 3px solid #ffd27a; outline-offset: 2px; }
 .shell[data-theme="dark"] .neuro-quality--good dd,
 .shell[data-theme="dark"] .neuro-quality-label--good { color: #8fd0a5; }
 .shell[data-theme="dark"] .neuro-quality--warning dd,

@@ -392,7 +392,10 @@ export function mountNeuroDvs(app, { db, manualSearch, recommendationsFor: getRe
     if (!owner || !vehicle || vehicle.engine_model !== engineModel || !vehicle.sessions.some(item => item.session_id === sessionId) ||
         !validText(query, 1000) || !results.length || !validText(answer, 24000)) return null;
     const id = randomUUID();
-    const evidence = results.map(({ manual, text, pdfPage, url }) => ({ manual: manual.title, text, pdfPage, url }));
+    const evidence = results.map(({ manual, manualId, text, pdfPage, url, illustrationPage, figureNumber, illustrationCaption }) => ({
+      manual: manual.title, text, pdfPage, url,
+      ...(illustrationPage && figureNumber ? { manualId: manualId || manual.id, illustrationPage, figureNumber, ...(illustrationCaption ? { illustrationCaption } : {}) } : {}),
+    }));
     storeExchange(owner, vehicleId, sessionId, { id, question: query, answer, evidence }, true);
     return id;
   };

@@ -5,10 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { createApp } from "./index.mjs";
 
-async function fixture(t, manualSearch) {
+async function fixture(t, manualSearch, valveCoverTorqueSearch) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "mehay-rag-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const app = createApp({ legacyDemo: true, dbPath: path.join(dir, "db.sqlite"), uploadsDir: path.join(dir, "uploads"), manualSearch });
+  const app = createApp({ legacyDemo: true, dbPath: path.join(dir, "db.sqlite"), uploadsDir: path.join(dir, "uploads"), manualSearch, ...(valveCoverTorqueSearch ? { valveCoverTorqueSearch } : {}) });
   const server = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -149,6 +149,77 @@ test("manual retrieval is keyless, engine-scoped, cited by PDF page, and protect
   assert.equal((await result.json()).results[0].url, "/api/manuals/sample-guide.pdf#page=4");
   const pdf = await request("/api/manuals/sample-guide.pdf");
   assert.equal(pdf.status, 404, "a synthetic citation cannot access an unconfigured knowledge base");
+});
+
+test("manual answer API does not return another fastener's torque for a valve-cover question", async t => {
+  let requested;
+  const oilPan = { manual: { id: "synthetic-engine-guide", title: "Учебное руководство", engine: "ЯМЗ-236М2" },
+    pdfPage: 12, text: "Болты масляного картера затянуть моментом 24 Н·м.", score: 3 };
+  const { request } = await fixture(t, async () => assert.fail("top-five retrieval is bypassed"), async input => {
+    requested = input;
+    return [oilPan];
+  });
+  const response = await request("/api/manuals/search", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ engineModel: "ЯМЗ-236М2", query: "Какой уровень затяжки болтов на клапанной крышке?", answer: true }) });
+  assert.equal(response.status, 200);
+  assert.equal(requested.engineModel, "ЯМЗ-236М2");
+  const body = await response.json();
+  assert.equal(body.manualAssessment, "insufficient_evidence");
+  assert.match(body.answer, /именно болтов клапанной крышки/);
+  assert.doesNotMatch(JSON.stringify(body), /24\s*Н·м/);
+  assert.deepEqual(body.results, []);
+});
+
+test("general assistant uses the vehicle-card engine and exposes only the matching valve-cover torque row", async t => {
+  let requested;
+  const page = { manual: { id: "synthetic-engine-guide", title: "Учебное руководство", engine: "ЯМЗ-236М2" }, pdfPage: 18,
+    text: "Болты крепления крышки клапанов затянуть моментом 8 Н·м", illustrationPage: 19, figureNumber: "7", illustrationCaption: "Рис.7. Последовательность затяжки болтов крышки клапанов." };
+  const { request } = await fixture(t, async () => assert.fail("top-five retrieval is bypassed for target torque"), async input => { requested = input; return [page]; });
+  const response = await request("/api/assistant", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ vehicleId: "SYNTH-001", message: "Какой уровень затяжки болтов на клапанной крышке?" }) });
+  assert.equal(response.status, 200);
+  assert.equal(requested.engineModel, "ЯМЗ-236М2", "engine should default to the vehicle card");
+  const body = await response.json();
+  assert.equal(body.manualAssessment, "sourced");
+  assert.match(body.answer, /крышки клапанов.*8 Н·м/);
+  assert.doesNotMatch(body.answer, /24\s*Н·м/);
+  assert.equal(body.sources.length, 1);
+  assert.doesNotMatch(body.sources[0].description, /24\s*Н·м/);
+  assert.equal(body.sources[0].manualId, "synthetic-engine-guide");
+  assert.equal(body.sources[0].illustrationPage, 19);
+  assert.equal(body.sources[0].figureNumber, "7");
+
+  const mismatch = await request("/api/assistant", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ vehicleId: "SYNTH-001", engineModel: "ЯМЗ-536", message: "Какой уровень затяжки болтов на клапанной крышке?" }) });
+  assert.equal(mismatch.status, 200);
+  assert.equal((await mismatch.json()).manualAssessment, "insufficient_evidence");
+});
+
+test("general assistant refuses torque numbers without vehicle context", async t => {
+  const { request } = await fixture(t, async () => assert.fail("manual retrieval requires vehicle context"));
+  for (const message of ["Какой уровень затяжки болтов на клапанной крышке?", "Какой момент затяжки болтов маховика?"]) {
+    const response = await request("/api/assistant", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message }) });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.manualAssessment, "insufficient_evidence");
+    assert.deepEqual(body.sources, []);
+    assert.doesNotMatch(body.answer, /\d+\s*(?:Н\s*[·⋅.]?\s*м|Нм|кгс)/iu);
+  }
+});
+
+test("manual search uses full selected-engine torque evidence and returns verified figure metadata", async t => {
+  const page = { manual: { id: "synthetic-zmz-guide", title: "Учебное руководство", engine: "ЗМЗ-40905.10" }, pdfPage: 186,
+    text: "Болты крышки клапанов завернуть моментом 6,9...8,8 Н·м", illustrationPage: 187, figureNumber: "147",
+    illustrationCaption: "Рис.147. Последовательность затяжки болтов крышки клапанов." };
+  const { request } = await fixture(t, async () => assert.fail("top-five retrieval is bypassed"), async ({ engineModel }) => engineModel === "ЗМЗ-40905.10" ? [page] : []);
+  const response = await request("/api/manuals/search", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ engineModel: "ЗМЗ-40905.10", query: "Какой момент затяжки болтов крышки клапанов?", answer: true }) });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.manualAssessment, "sourced");
+  assert.match(body.answer, /6,9\.\.\.8,8 Н·м/);
+  assert.deepEqual(body.results.map(({ manualId, pdfPage, illustrationPage, figureNumber }) => ({ manualId, pdfPage, illustrationPage, figureNumber })),
+    [{ manualId: "synthetic-zmz-guide", pdfPage: 186, illustrationPage: 187, figureNumber: "147" }]);
 });
 
 test("shared conversation marks only answers retrieved by the server for this vehicle and session", async t => {

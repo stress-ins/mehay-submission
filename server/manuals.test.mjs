@@ -19,6 +19,26 @@ test("retrieves synthetic citations and excludes a page for another engine varia
   assert.equal(specific[0].pdfPage, 2);
 });
 
+test("torque evidence search scans the selected engine's allowed pages and links its verified figure caption", () => {
+  const repo = createManualRepository({ manuals: [{
+    id: "synthetic-zmz-guide", title: "Учебное руководство", filename: "synthetic-zmz.pdf",
+    engineKeys: ["ЗМЗ-40904.10", "ЗМЗ-40905.10"], pageCount: 5, pages: [
+      { pdfPage: 159, text: "Общий раздел руководства. ЗМЗ-40904.10: другая регулировка на этой странице.\nБолты крышки клапанов завернуть моментом 6,9...8,8\nН·м (0,7...0,9 кгс·м) в последовательности по рис.147" },
+      { pdfPage: 186, text: "Болты крепления крышки клапанов затянуть моментом 6,9...8,8\nН·м (0,7...0,9 кгс·м) по рис.147" },
+      { pdfPage: 187, text: "Рис.147. Последовательность затяжки болтов крышки клапанов." },
+      { pdfPage: 188, text: "Болты крышки клапанов передней головки блока затянуть моментом 6,9...8,8\nН·м." },
+      { pdfPage: 189, text: "ЗМЗ-40904.10 только: Болты крышки клапанов завернуть моментом 6,9...8,8\nН·м." },
+    ],
+  }] });
+  const pages = repo.searchValveCoverTorquePages({ engineModel: "ЗМЗ-40905.10", query: "ЗМЗ-40905.10 момент затяжки болтов крышки клапанов" });
+  assert.deepEqual(pages.map(({ pdfPage }) => pdfPage), [159, 186]);
+  assert.equal(pages[0].text, "Болты крышки клапанов завернуть моментом 6,9...8,8 Н·м (0,7...0,9 кгс·м) в последовательности по рис.147");
+  assert.equal(pages[1].illustrationPage, 187);
+  assert.equal(pages[1].figureNumber, "147");
+  assert.match(pages[1].illustrationCaption, /Последовательность затяжки болтов крышки клапанов/);
+  assert.deepEqual(repo.searchValveCoverTorquePages({ engineModel: "ЗМЗ-40904.10", query: "ЗМЗ-40905.10 момент болты крышки клапанов" }), []);
+});
+
 test("index exposes allowlisted manual metadata without depending on bundled PDF content", () => {
   assert.deepEqual(repository.getManuals(), [{
     id: "zmz-40904-40905", title: "Synthetic service guide", filename: "sample.pdf",

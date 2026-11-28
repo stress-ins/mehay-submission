@@ -74,7 +74,9 @@ import { AUTH_CHANNEL_NAME, AUTH_EPOCH_KEY, createAuthBoundary } from "./authBou
 import { canSaveAssignments, visibleConversation } from "./vehicleAccess";
 import "./ProcurementDraft.css";
 import AssistantAnswer from "./AssistantAnswer";
-import { assistantHistoryForRequest, readRecordTarget, recordReturnPath, recordSearch, resolveRecord, type AssistantEvidence, type RecordTarget } from "./evidence";
+import ManualIllustration from "./ManualIllustration";
+import { type ManualIllustrationSource } from "./manualIllustrationPath";
+import { assistantHistoryForRequest, readRecordTarget, recordElementId, recordReturnPath, recordSearch, resolveRecord, type AssistantEvidence, type RecordTarget } from "./evidence";
 
 type VehicleType = "грузовой автомобиль" | "автобус" | "автомобиль 4×4";
 type Vehicle = {
@@ -286,7 +288,7 @@ type Source = {
   tags: string[];
   manual?: string;
   pdfPage?: number;
-};
+} & ManualIllustrationSource;
 type Integration = {
   id: string;
   name: string;
@@ -501,7 +503,7 @@ const safeUrl = (url: string) => {
     return null;
   }
 };
-const sourceUrl = (source: Source) => {
+const sourceUrl = (source: Pick<Source, "url" | "pdfPage">) => {
   const href = safeUrl(source.url) || (source.url.startsWith("/api/manuals/") ? new URL(appPath(source.url), window.location.origin).href : null);
   if (!href || !source.pdfPage) return href;
   const parsed = new URL(href);
@@ -1215,7 +1217,7 @@ function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssis
       </aside>}
       {diagnosis?.guidance.ticketBlockReason === "inspection_only" && <p role="status">{ui("Выполните проверку на месте и запишите результат осмотра в карточке машины.")}</p>}
       {diagnosis?.guidance.canCreateDefectoscopyTicket && <div className="neuro-ticket"><PButton type="button" variant="secondary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket("defectoscopy")}>{ui(ticketId ? "Заявка создана" : "Заявка на дефектовку")}</PButton><span>{ui("Только проверка из руководства; без ремонта и запчастей.")}</span></div>}
-      {diagnosis?.guidance.recommendations.length ? <div className="neuro-section"><h3>{ui("Рекомендации")}</h3><ul>{diagnosis.guidance.recommendations.map((item, i) => <li key={`${item.manual}-${item.pdfPage}-${i}`}>{normalizeManualText(item.text)}{item.excerpt && item.excerpt !== item.text ? <details><summary>Основание в руководстве</summary><p className="neuro-excerpt">{normalizeManualText(item.excerpt)}</p></details> : null} <a href={appPath(item.url)} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a> <button type="button" onClick={() => openRecommendationStep(i)}>{ui("Открыть этот шаг в плане работ")}</button></li>)}</ul></div> : null}
+      {diagnosis?.guidance.recommendations.length ? <div className="neuro-section"><h3>{ui("Рекомендации")}</h3><ul>{diagnosis.guidance.recommendations.map((item, i) => <li key={`${item.manual}-${item.pdfPage}-${i}`}>{normalizeManualText(item.text)}{item.excerpt && item.excerpt !== item.text ? <details><summary>Основание в руководстве</summary><p className="neuro-excerpt">{normalizeManualText(item.excerpt)}</p></details> : null} {sourceUrl(item) && <a href={sourceUrl(item)!} target="_blank" rel="noreferrer">{item.manual}, стр. {item.pdfPage}</a>} <button type="button" onClick={() => openRecommendationStep(i)}>{ui("Открыть этот шаг в плане работ")}</button></li>)}</ul></div> : null}
       {diagnosis?.guidance.status === "anomaly" && !diagnosis.guidance.canCreateTicket && diagnosis.guidance.ticketBlockReason === "manual_evidence_required" && <aside className="neuro-defectoscopy" role="status"><strong>Нужна дефектовка</strong><p>{diagnosis.guidance.message} Для заявки ТОиР пока нет подтверждённой операции со ссылкой на руководство. Запишите условия замера и результаты осмотра в карточке машины.</p></aside>}
       {diagnosis?.guidance.canCreateTicket && ticketPreview?.preview.purpose !== "defectoscopy" && <div className="neuro-ticket" style={{ flexWrap: "wrap" }}><label>{ui("Приоритет заявки")}<select value={draftUrgency} disabled={busy || !!ticketPreview || !!ticketId} onChange={(e) => setDraftUrgency(e.target.value as "low" | "medium" | "high")}><option value="high">{ui("Высокий · до следующего рейса")}</option><option value="medium">{ui("Средний · к ближайшему плановому ТО")}</option><option value="low">{ui("Низкий · к следующему осмотру")}</option></select></label><PButton type="button" variant="primary" disabled={busy || !!ticketPreview || !!ticketId} onClick={() => void prepareTicket()}>{ui(ticketId ? "Заявка создана" : "Подготовить просмотр заявки")}</PButton>{historicalPart && <p>{ui("Кандидат детали из истории:")} <strong>{historicalPart}</strong>. {ui("Требует проверки применимости.")}</p>}{!assistantHost && repairTicketPreview}{ticketId && <p role="status">{ui("Номер заявки:")} <strong>{ticketId}</strong></p>}</div>}
       </>}
@@ -2270,6 +2272,11 @@ export default function App() {
         setActiveRequest(request);
       }
       setError("");
+      if (target.kind !== "request") window.requestAnimationFrame(() => {
+        const element = document.getElementById(recordElementId(target));
+        element?.scrollIntoView({ behavior: "smooth", block: "center" });
+        element?.focus({ preventScroll: true });
+      });
     } catch (cause) {
       if (isCurrent()) setError(cause instanceof Error ? cause.message : "Не удалось открыть актуальную запись.");
     }
@@ -2658,7 +2665,7 @@ export default function App() {
       const result = manualOnly
         ? await api<{
             answer?: string;
-            results: { manual: { id: string; title: string }; pdfPage: number; text: string; url: string }[];
+            results: ({ manual: { id: string; title: string }; pdfPage: number; text: string; url: string } & ManualIllustrationSource)[];
           }>("/api/manuals/search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2673,6 +2680,10 @@ export default function App() {
               tags: [],
               manual: item.manual.title,
               pdfPage: item.pdfPage,
+              manualId: item.manualId || item.manual.id,
+              illustrationPage: item.illustrationPage,
+              figureNumber: item.figureNumber,
+              illustrationCaption: item.illustrationCaption,
             }));
             const excerpts = results.map((item) => {
               const excerpt = item.text.trim().replace(/\s+/g, " ");
@@ -3406,7 +3417,7 @@ export default function App() {
                                     </p>
                                   </div>
                                 </div>
-                                {vehicle.dtcs.length > 0 && <section className="dtc-list" aria-labelledby="dtc-heading">
+                                {vehicle.dtcs.length > 0 && <section className="dtc-list" id={recordElementId({ vehicleId: vehicle.id, kind: "diagnostic", recordId: "current" })} tabIndex={-1} aria-labelledby="dtc-heading">
                                   <div className="section-heading"><h3 id="dtc-heading">Коды ошибок ЭБУ</h3><span className="count-tag">{vehicle.dtcs.length}</span></div>
                                   {vehicle.dtcs.map((code) => {
                                     const detail = vehicle.dtcDetails?.find((entry) => entry.code === code);
@@ -3445,7 +3456,7 @@ export default function App() {
                                   </span>
                                 </div>
                                 {vehicle.telemetry.map((t) => (
-                                  <details className="telemetry-row" key={t.id}>
+                                  <details className="telemetry-row" key={t.id} id={recordElementId({ vehicleId: vehicle.id, kind: "diagnostic", recordId: t.id })} tabIndex={-1}>
                                     <summary>
                                       <span>
                                         <b>{t.source}</b>
@@ -3596,7 +3607,7 @@ export default function App() {
                                   </button>
                                 </div>
                                 {visibleHistoryPage.map((h) => (
-                                  <article className="history-row" key={h.id}>
+                                  <article className="history-row" key={h.id} id={recordElementId({ vehicleId: vehicle.id, kind: "history", recordId: h.id })} tabIndex={-1}>
                                     <span className="history-date">
                                       {date(h.date)}
                                     </span>
@@ -3987,7 +3998,7 @@ export default function App() {
                                   </PButton>
                                 </form>
                                 {vehicle.notes.map((n) => (
-                                  <div className="note-row" key={n.id}>
+                                  <div className="note-row" key={n.id} id={recordElementId({ vehicleId: vehicle.id, kind: "note", recordId: n.id })} tabIndex={-1}>
                                     <MessageSquareText size={15} />
                                     <div>
                                       <p>{n.text}</p>
@@ -4353,14 +4364,16 @@ export default function App() {
                               {assistantSources.map((s, i) => {
                                 const href = sourceUrl(s);
                                 return href ? (
+                                  <div className="answer-source-item" key={`${href}-${i}`}>
                                   <a
-                                    key={`${href}-${i}`}
                                     href={href}
                                     target="_blank"
                                     rel="noreferrer"
                                   >
                                     {s.manual || s.title || href}{s.pdfPage ? ` · PDF, стр. ${s.pdfPage}` : ""}
                                   </a>
+                                  <ManualIllustration source={s} appPath={appPath} />
+                                  </div>
                                 ) : null;
                               })}
                               <small>

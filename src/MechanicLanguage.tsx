@@ -44,6 +44,14 @@ export function mechanicInstruction(language: Language, _engineModel: string, _a
   return language === "ru" ? item.text : item.translations?.[language] || item.text;
 }
 
+function manualPageUrl(url: string, page: number) {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (/\.pdf$/i.test(parsed.pathname)) parsed.hash = `page=${page}`;
+    return parsed.href;
+  } catch { return url; }
+}
+
 export function MechanicLanguage({ status, engineModel, anomalyCode, recommendations, onOpenStep }: {
   status: Status;
   engineModel: string;
@@ -59,7 +67,7 @@ export function MechanicLanguage({ status, engineModel, anomalyCode, recommendat
       ? <ul>{recommendations.map((item, index) => <li key={item.text}>
         <p>{mechanicInstruction(language, engineModel, anomalyCode || "", item)}</p>
         {onOpenStep && <button type="button" onClick={() => onOpenStep(index)}>{t("Открыть этот шаг в плане работ", language)}</button>}
-        <p><a href={item.url} target="_blank" rel="noreferrer">{item.manual}, {t("стр.", language)} {item.pdfPage} · {t("оригинал PDF", language)}</a></p>
+        <p><a href={manualPageUrl(item.url, item.pdfPage)} target="_blank" rel="noreferrer">{item.manual}, {t("стр.", language)} {item.pdfPage} · {t("оригинал PDF", language)}</a></p>
         {item.excerpt && <details><summary>{t("Цитата из оригинала на русском", language)}</summary><p className="neuro-excerpt">{item.excerpt}</p></details>}
       </li>)}</ul>
       : <p>{language === "en" ? "No verified procedure for this fault and engine. Check the relevant manual section." : language === "uz" ? "Bu nosozlik kodi uchun tasdiqlangan ko‘rsatma topilmadi; PDF dagi tegishli bo‘limni mexanik bilan tekshiring." : language === "tg" ? "Барои ин рамзи нуқсон дастури тасдиқшуда ёфт нашуд; бахши мувофиқи PDF-ро бо механик санҷед." : "इस खराबी कोड के लिए प्रमाणित निर्देश नहीं मिला; मैनुअल का संबंधित भाग मैकेनिक के साथ जाँचें।"}</p>)}

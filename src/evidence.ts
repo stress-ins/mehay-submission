@@ -55,7 +55,7 @@ export function recordReturnPath(search: string, appPath: string): string {
 }
 
 export function recordElementId(target: RecordTarget): string {
-  return `record-${target.kind}-${encodeURIComponent(target.recordId)}`;
+  return `record-${target.kind}-${encodeURIComponent(target.vehicleId)}-${encodeURIComponent(target.recordId)}`;
 }
 
 // The link must resolve against current, authorized data, never the saved AI snapshot.

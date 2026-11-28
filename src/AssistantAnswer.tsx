@@ -3,8 +3,10 @@ import { Battery, BookOpenText, CircleHelp, ClipboardCheck, Factory, Globe2, Mes
 import "./ChatExperience.css";
 import { useSystemLanguage } from "./systemLanguage";
 import { translateSystemText } from "./systemTranslations";
+import ManualIllustration from "./ManualIllustration";
+import { manualIllustrationPath, type ManualIllustrationSource } from "./manualIllustrationPath";
 
-type Source = { title: string; url: string; type: string; origin?: string; verification?: string; manual?: string; pdfPage?: number; description?: string };
+type Source = { title: string; url: string; type: string; origin?: string; verification?: string; manual?: string; pdfPage?: number; description?: string } & ManualIllustrationSource;
 const kindLabel = { history: "Работа", request: "Заявка", diagnostic: "Диагностика", note: "Заметка" };
 const timestamp = (value: string) => Number.isNaN(Date.parse(value)) ? "Дата не указана" : new Date(value).toLocaleString("ru-RU");
 
@@ -61,6 +63,7 @@ export default function AssistantAnswer({ answer, evidence, sources, webSearch, 
   }}>{label}</a>;
   const cited = evidence?.records.filter((record) => evidence.citedRecordIds.includes(record.id)) || [];
   const safeSources = (sources || []).filter((source) => {
+    if (source.url.startsWith("/api/manuals/")) return Boolean(manualIllustrationPath(source)) || /^\/api\/manuals\/[a-zA-Z0-9_-]+\.pdf(?:#page=\d+)?$/.test(source.url);
     try { const url = new URL(source.url); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password; } catch { return false; }
   });
   const recordList = (records: EvidenceRecord[]) => records.map((record) => <article className="evidence-record" key={record.id}>
@@ -82,16 +85,19 @@ export default function AssistantAnswer({ answer, evidence, sources, webSearch, 
       <details><summary>Контекст ответа · {evidence.records.length} записей</summary><div className="evidence-records">{evidence.truncated && <p className="alert alert-info">Использована часть последних записей. Полная история доступна в карточке машины.</p>}{recordList(evidence.records)}</div></details>
     </>}
     {(webSearch || safeSources.length > 0) && <section className="evidence-sources" aria-label="Внешние источники"><h3>Источники</h3>{safeSources.length ? <><p>Сверьте раздел, двигатель и модификацию перед применением.</p>
-      {safeSources.map((source) => { const url = new URL(source.url);
+      {safeSources.map((source) => { const url = new URL(source.url, window.location.origin);
         const community = source.origin === "community" || (!source.origin && source.type === "community");
         const manufacturer = source.origin === "manufacturer";
         const Icon = community ? MessageCircle : manufacturer ? Factory : Globe2;
         const evidence = source.description?.replace(/^Provider-supplied citation snippet \(not independently verified; not necessarily a direct quote\):\s*/i, "").trim();
-        return <a className="evidence-source-card" href={url.href} key={url.href} target="_blank" rel="noopener noreferrer">
+        return <article className="evidence-source-card" key={url.href}>
+          <a className="evidence-source-link" href={url.href} target="_blank" rel="noopener noreferrer">
           <span className="evidence-source-icon" aria-hidden="true"><Icon size={20} /></span>
           <span className="evidence-source-copy"><strong>{source.title || url.hostname}</strong><small>{manufacturer ? "Источник производителя · OEM" : community ? (url.pathname !== "/" ? `Форум · ${url.hostname}${url.pathname}` : `Сообщество · ${url.hostname}`) : `Технический источник · ${url.hostname}`}</small>{evidence && <span className="evidence-source-excerpt">{evidence.slice(0, 300)}{evidence.length > 300 ? "…" : ""}</span>}<small>{source.verification === "search_result" ? "Фрагмент результата поиска; применимость требует проверки" : "Источник не проверен"}</small></span>
           <span className="evidence-source-open" aria-hidden="true">↗</span>
-        </a>;
+          </a>
+          {manualIllustrationPath(source) && <ManualIllustration source={source} appPath={appPath} />}
+        </article>;
       })}</> : <p className="evidence-sources-empty">{webDomain ? `В выбранной области (${webDomain}) подходящих открытых источников не найдено.` : "Подходящих открытых источников не найдено."} Попробуйте другой домен или общий поиск.</p>}
     </section>}
   </div>;

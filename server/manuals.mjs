@@ -30,7 +30,9 @@ const torqueUnit = /н\s*[·⋅.]?\s*м|кгс\s*[·⋅.]\s*м/iu;
 const torqueValue = /\p{N}/u;
 const frontOrRearHeadCover = /(?:(?:передн|задн)[\p{L}\s-]{0,50}(?:головк|гбц)|(?:головк|гбц)[\p{L}\s-]{0,50}(?:передн|задн))/iu;
 
-function torqueSegments(line) { return line.split(/[;；|｜\t]|(?<!\d),(?!\d)/u); }
+function torqueSegments(line) {
+  return line.split(/[;；|｜\t]|(?<!\d),(?!\d)|(?<=[.!?])\s+(?=[А-ЯЁA-Z])/u);
+}
 
 function focusValveCoverTorqueRow(text) {
   const target = valveCoverTarget.exec(text);
@@ -41,13 +43,15 @@ function focusValveCoverTorqueRow(text) {
   return text.slice(fasteners.at(-1).index).trim();
 }
 
-export function valveCoverTorqueRows(text) {
+export function valveCoverTorqueRows(text, engineModel) {
+  const selected = engineModel ? engineKey(engineModel) : null;
   const lines = text.split(/\r?\n/u);
   const rows = [];
   for (let index = 0; index < lines.length; index++) {
     for (const segment of torqueSegments(lines[index])) {
       const normalized = segment.replace(/\s+/gu, " ").trim();
-      if (valveCoverTarget.test(normalized) && valveCoverFastener.test(normalized) && torqueValue.test(normalized) && torqueUnit.test(normalized) && !frontOrRearHeadCover.test(normalized)) {
+      if (valveCoverTarget.test(normalized) && valveCoverFastener.test(normalized) && torqueValue.test(normalized) && torqueUnit.test(normalized)
+        && !frontOrRearHeadCover.test(normalized) && (!selected || queryMatchesEngine(normalized, selected))) {
         const focused = focusValveCoverTorqueRow(normalized);
         if (focused) rows.push(focused);
       }
@@ -59,7 +63,8 @@ export function valveCoverTorqueRows(text) {
           && !/[.!?;:]\s*$/u.test(normalized);
         const combined = `${normalized} ${next}`.replace(/\s+/gu, " ").trim();
         if (continuation && valveCoverTarget.test(normalized) && valveCoverFastener.test(normalized)
-          && torqueValue.test(normalized) && torqueUnit.test(combined) && !frontOrRearHeadCover.test(combined)) {
+          && torqueValue.test(normalized) && torqueUnit.test(combined) && !frontOrRearHeadCover.test(combined)
+          && (!selected || queryMatchesEngine(normalized, selected))) {
           const focused = focusValveCoverTorqueRow(combined);
           if (focused) rows.push(focused);
         }
@@ -200,16 +205,16 @@ export function createManualRepository(indexData) {
     const selected = engineKey(engineModel);
     if (!selected || !queryMatchesEngine(query, selected)) return [];
     return engineManuals(engineModel).flatMap(manual => manual.pages
-      .flatMap(page => valveCoverTorqueRows(page.text)
+      .flatMap(page => valveCoverTorqueRows(page.text, engineModel)
         // Shared manuals can mention multiple engine variants on one page. Apply
         // variant gating to the matched row, not unrelated text elsewhere on it.
         .filter(text => queryMatchesEngine(text, selected))
         .map(text => {
         const references = [...text.matchAll(/рис(?:унок)?\.?\s*№?\s*(\d+)/giu)].map(([, number]) => number);
         const illustration = references.map(number => {
-          const captionPage = manual.pages.find(candidate => new RegExp(`(?:рис(?:унок)?\\.?\\s*№?\\s*${number}\\s*\\.?\\s*)[^\\n]{0,180}(?:последовательност|схем).{0,80}(?:болт|крепеж|креплен).{0,80}(?:клапан.{0,40}крыш|крыш.{0,40}клапан)`, "iu").test(candidate.text));
+          const captionPage = manual.pages.find(candidate => new RegExp(`(?:рис(?:унок)?\\.?\\s*№?\\s*${number}(?!\\d)\\s*\\.?\\s*)[^\\n]{0,180}(?:последовательност|схем).{0,80}(?:болт|крепеж|креплен).{0,80}(?:клапан.{0,40}крыш|крыш.{0,40}клапан)`, "iu").test(candidate.text));
           if (!captionPage) return null;
-          const caption = captionPage.text.split(/\r?\n/u).map(line => line.trim()).find(line => new RegExp(`(?:рис(?:унок)?\\.?\\s*№?\\s*${number}\\s*\\.?\\s*)[^\\n]{0,180}(?:последовательност|схем).{0,80}(?:болт|крепеж|креплен).{0,80}(?:клапан.{0,40}крыш|крыш.{0,40}клапан)`, "iu").test(line));
+          const caption = captionPage.text.split(/\r?\n/u).map(line => line.trim()).find(line => new RegExp(`(?:рис(?:унок)?\\.?\\s*№?\\s*${number}(?!\\d)\\s*\\.?\\s*)[^\\n]{0,180}(?:последовательност|схем).{0,80}(?:болт|крепеж|креплен).{0,80}(?:клапан.{0,40}крыш|крыш.{0,40}клапан)`, "iu").test(line));
           return caption ? { illustrationPage: captionPage.pdfPage, figureNumber: number, illustrationCaption: caption } : null;
         }).find(Boolean);
         return { manual: { id: manual.id, title: manual.title, engine: engineModel }, pdfPage: page.pdfPage, text,

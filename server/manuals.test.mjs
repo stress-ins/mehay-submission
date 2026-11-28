@@ -22,19 +22,23 @@ test("retrieves synthetic citations and excludes a page for another engine varia
 test("torque evidence search scans the selected engine's allowed pages and links its verified figure caption", () => {
   const repo = createManualRepository({ manuals: [{
     id: "synthetic-zmz-guide", title: "Учебное руководство", filename: "synthetic-zmz.pdf",
-    engineKeys: ["ЗМЗ-40904.10", "ЗМЗ-40905.10"], pageCount: 5, pages: [
-      { pdfPage: 159, text: "Общий раздел руководства. ЗМЗ-40904.10: другая регулировка на этой странице.\nБолты крышки клапанов завернуть моментом 6,9...8,8\nН·м (0,7...0,9 кгс·м) в последовательности по рис.147" },
-      { pdfPage: 186, text: "Болты крепления крышки клапанов затянуть моментом 6,9...8,8\nН·м (0,7...0,9 кгс·м) по рис.147" },
-      { pdfPage: 187, text: "Рис.147. Последовательность затяжки болтов крышки клапанов." },
-      { pdfPage: 188, text: "Болты крышки клапанов передней головки блока затянуть моментом 6,9...8,8\nН·м." },
-      { pdfPage: 189, text: "ЗМЗ-40904.10 только: Болты крышки клапанов завернуть моментом 6,9...8,8\nН·м." },
+    engineKeys: ["ЗМЗ-40904.10", "ЗМЗ-40905.10"], pageCount: 7, pages: [
+      { pdfPage: 51, text: "Общий раздел руководства. ЗМЗ-40904.10: другая регулировка на этой странице.\nБолты крышки клапанов завернуть моментом 7,1...9,3\nН·м (0,8...1,0 кгс·м) в последовательности по рис.34" },
+      { pdfPage: 52, text: "Болты крепления крышки клапанов затянуть моментом 7,1...9,3\nН·м (0,8...1,0 кгс·м) по рис.348" },
+      { pdfPage: 53, text: "Рис.347. Последовательность затяжки болтов крышки клапанов." },
+      { pdfPage: 54, text: "Болты крышки клапанов передней головки блока затянуть моментом 7,1...9,3\nН·м." },
+      { pdfPage: 55, text: "ЗМЗ-40904.10 только: Болты крышки клапанов завернуть моментом 31,2\nН·м." },
+      { pdfPage: 56, text: "Болты крышки клапанов установить. Болты шкива затянуть моментом 27,4 Н·м." },
+      { pdfPage: 57, text: "Рис.348. Последовательность затяжки болтов крышки клапанов." },
     ],
   }] });
   const pages = repo.searchValveCoverTorquePages({ engineModel: "ЗМЗ-40905.10", query: "ЗМЗ-40905.10 момент затяжки болтов крышки клапанов" });
-  assert.deepEqual(pages.map(({ pdfPage }) => pdfPage), [159, 186]);
-  assert.equal(pages[0].text, "Болты крышки клапанов завернуть моментом 6,9...8,8 Н·м (0,7...0,9 кгс·м) в последовательности по рис.147");
-  assert.equal(pages[1].illustrationPage, 187);
-  assert.equal(pages[1].figureNumber, "147");
+  assert.deepEqual(pages.map(({ pdfPage }) => pdfPage), [51, 52]);
+  assert.ok(pages.every(({ text }) => !/31,2|27,4/u.test(text)), "other-engine and neighboring-part values must be excluded");
+  assert.equal(pages[0].text, "Болты крышки клапанов завернуть моментом 7,1...9,3 Н·м (0,8...1,0 кгс·м) в последовательности по рис.34");
+  assert.equal(pages[0].illustrationPage, undefined, "figure 34 must not match a caption for figure 347");
+  assert.equal(pages[1].illustrationPage, 57);
+  assert.equal(pages[1].figureNumber, "348");
   assert.match(pages[1].illustrationCaption, /Последовательность затяжки болтов крышки клапанов/);
   assert.deepEqual(repo.searchValveCoverTorquePages({ engineModel: "ЗМЗ-40904.10", query: "ЗМЗ-40905.10 момент болты крышки клапанов" }), []);
 });

@@ -58,24 +58,24 @@ test("valve-cover torque answers require matching fastener, part, numeric value,
 });
 
 test("valve-cover torque answer starts at the complete fastener action and deduplicates equal source values", () => {
-  const pages = [159, 186].map(pdfPage => ({
+  const pages = [61, 62].map(pdfPage => ({
     manual: { id: "synthetic-guide", title: "Учебное руководство" }, pdfPage,
-    illustrationPage: pdfPage === 186 ? 187 : 159, figureNumber: pdfPage === 186 ? "147" : "126",
-    text: "…свечных колодцев. Болты крепления крышки клапанов затянуть моментом 6,9...8,8 Н·м (0,7...0,9 кгс·м).",
+    illustrationPage: pdfPage === 62 ? 63 : 61, figureNumber: pdfPage === 62 ? "48" : "46",
+    text: "…учебного узла. Болты крепления крышки клапанов затянуть моментом 7,1...9,3 Н·м (0,8...1,0 кгс·м).",
   }));
   const assessment = valveCoverFastenerTorqueAssessment(pages);
   assert.match(assessment.answer, /^Болты крепления крышки клапанов затянуть моментом/u);
-  assert.equal((assessment.answer.match(/6,9\.\.\.8,8/gu) || []).length, 1);
+  assert.equal((assessment.answer.match(/7,1\.\.\.9,3/gu) || []).length, 1);
   assert.equal(assessment.results.length, 2);
   assert.deepEqual(assessment.results.map(({ pdfPage, illustrationPage, figureNumber }) => ({ pdfPage, illustrationPage, figureNumber })), [
-    { pdfPage: 159, illustrationPage: 159, figureNumber: "126" },
-    { pdfPage: 186, illustrationPage: 187, figureNumber: "147" },
+    { pdfPage: 61, illustrationPage: 61, figureNumber: "46" },
+    { pdfPage: 62, illustrationPage: 63, figureNumber: "48" },
   ]);
 
   const differing = valveCoverFastenerTorqueAssessment([
-    pages[0], { ...pages[1], text: "…свечных колодцев. Болты крепления крышки клапанов затянуть моментом 10 Н·м." },
+    pages[0], { ...pages[1], text: "…учебного узла. Болты крепления крышки клапанов затянуть моментом 10 Н·м." },
   ]);
-  assert.match(differing.answer, /6,9\.\.\.8,8/u);
+  assert.match(differing.answer, /7,1\.\.\.9,3/u);
   assert.match(differing.answer, /10 Н·м/u);
 });
 

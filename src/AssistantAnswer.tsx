@@ -4,7 +4,7 @@ import "./ChatExperience.css";
 import { useSystemLanguage } from "./systemLanguage";
 import { translateSystemText } from "./systemTranslations";
 import ManualIllustration from "./ManualIllustration";
-import { manualIllustrationPath, type ManualIllustrationSource } from "./manualIllustrationPath";
+import { sourceHref, manualIllustrationPath, type ManualIllustrationSource } from "./manualIllustrationPath";
 
 type Source = { title: string; url: string; type: string; origin?: string; verification?: string; manual?: string; pdfPage?: number; description?: string } & ManualIllustrationSource;
 const kindLabel = { history: "Работа", request: "Заявка", diagnostic: "Диагностика", note: "Заметка" };
@@ -62,9 +62,9 @@ export default function AssistantAnswer({ answer, evidence, sources, webSearch, 
     event.preventDefault(); onOpen(record);
   }}>{label}</a>;
   const cited = evidence?.records.filter((record) => evidence.citedRecordIds.includes(record.id)) || [];
-  const safeSources = (sources || []).filter((source) => {
-    if (source.url.startsWith("/api/manuals/")) return Boolean(manualIllustrationPath(source)) || /^\/api\/manuals\/[a-zA-Z0-9_-]+\.pdf(?:#page=\d+)?$/.test(source.url);
-    try { const url = new URL(source.url); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password; } catch { return false; }
+  const safeSources = (sources || []).flatMap((source) => {
+    const href = sourceHref(source, window.location.origin, appPath);
+    return href ? [{ source, url: new URL(href) }] : [];
   });
   const recordList = (records: EvidenceRecord[]) => records.map((record) => <article className="evidence-record" key={record.id}>
     <span className="badge text-bg-secondary">{translateSystemText(kindLabel[record.kind], locale)} · {record.vehiclePlate}</span>
@@ -85,7 +85,7 @@ export default function AssistantAnswer({ answer, evidence, sources, webSearch, 
       <details><summary>Контекст ответа · {evidence.records.length} записей</summary><div className="evidence-records">{evidence.truncated && <p className="alert alert-info">Использована часть последних записей. Полная история доступна в карточке машины.</p>}{recordList(evidence.records)}</div></details>
     </>}
     {(webSearch || safeSources.length > 0) && <section className="evidence-sources" aria-label="Внешние источники"><h3>Источники</h3>{safeSources.length ? <><p>Сверьте раздел, двигатель и модификацию перед применением.</p>
-      {safeSources.map((source) => { const url = new URL(source.url, window.location.origin);
+      {safeSources.map(({ source, url }) => {
         const community = source.origin === "community" || (!source.origin && source.type === "community");
         const manufacturer = source.origin === "manufacturer";
         const Icon = community ? MessageCircle : manufacturer ? Factory : Globe2;

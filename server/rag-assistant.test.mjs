@@ -208,18 +208,18 @@ test("general assistant refuses torque numbers without vehicle context", async t
 });
 
 test("manual search uses full selected-engine torque evidence and returns verified figure metadata", async t => {
-  const page = { manual: { id: "synthetic-zmz-guide", title: "Учебное руководство", engine: "ЗМЗ-40905.10" }, pdfPage: 186,
-    text: "Болты крышки клапанов завернуть моментом 6,9...8,8 Н·м", illustrationPage: 187, figureNumber: "147",
-    illustrationCaption: "Рис.147. Последовательность затяжки болтов крышки клапанов." };
+  const page = { manual: { id: "synthetic-zmz-guide", title: "Учебное руководство", engine: "ЗМЗ-40905.10" }, pdfPage: 62,
+    text: "Болты крышки клапанов завернуть моментом 7,1...9,3 Н·м", illustrationPage: 63, figureNumber: "48",
+    illustrationCaption: "Рис.48. Последовательность затяжки болтов крышки клапанов." };
   const { request } = await fixture(t, async () => assert.fail("top-five retrieval is bypassed"), async ({ engineModel }) => engineModel === "ЗМЗ-40905.10" ? [page] : []);
   const response = await request("/api/manuals/search", { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ engineModel: "ЗМЗ-40905.10", query: "Какой момент затяжки болтов крышки клапанов?", answer: true }) });
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.manualAssessment, "sourced");
-  assert.match(body.answer, /6,9\.\.\.8,8 Н·м/);
+  assert.match(body.answer, /7,1\.\.\.9,3 Н·м/);
   assert.deepEqual(body.results.map(({ manualId, pdfPage, illustrationPage, figureNumber }) => ({ manualId, pdfPage, illustrationPage, figureNumber })),
-    [{ manualId: "synthetic-zmz-guide", pdfPage: 186, illustrationPage: 187, figureNumber: "147" }]);
+    [{ manualId: "synthetic-zmz-guide", pdfPage: 62, illustrationPage: 63, figureNumber: "48" }]);
 });
 
 test("shared conversation marks only answers retrieved by the server for this vehicle and session", async t => {

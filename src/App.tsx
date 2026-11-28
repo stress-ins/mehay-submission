@@ -75,7 +75,7 @@ import { canSaveAssignments, visibleConversation } from "./vehicleAccess";
 import "./ProcurementDraft.css";
 import AssistantAnswer from "./AssistantAnswer";
 import ManualIllustration from "./ManualIllustration";
-import { type ManualIllustrationSource } from "./manualIllustrationPath";
+import { sourceHref, type ManualIllustrationSource } from "./manualIllustrationPath";
 import { assistantHistoryForRequest, readRecordTarget, recordElementId, recordReturnPath, recordSearch, resolveRecord, type AssistantEvidence, type RecordTarget } from "./evidence";
 
 type VehicleType = "грузовой автомобиль" | "автобус" | "автомобиль 4×4";
@@ -503,13 +503,7 @@ const safeUrl = (url: string) => {
     return null;
   }
 };
-const sourceUrl = (source: Pick<Source, "url" | "pdfPage">) => {
-  const href = safeUrl(source.url) || (source.url.startsWith("/api/manuals/") ? new URL(appPath(source.url), window.location.origin).href : null);
-  if (!href || !source.pdfPage) return href;
-  const parsed = new URL(href);
-  if (/\.pdf$/i.test(parsed.pathname)) parsed.hash = `page=${source.pdfPage}`;
-  return parsed.href;
-};
+const sourceUrl = (source: Pick<Source, "url" | "pdfPage">) => sourceHref(source, window.location.origin, appPath);
 const authenticatedResourceUrl = (url: string) => {
   const resolved = appPath(url);
   const identity = authBoundary.identity;

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assistantHistoryForRequest, citedRecordForMarker, readRecordTarget, recordElementId, recordReturnPath, resolveRecord } from "../src/evidence.ts";
-import { manualIllustrationPath } from "../src/manualIllustrationPath.ts";
+import { manualIllustrationPath, sourceHref } from "../src/manualIllustrationPath.ts";
 
 test("conversation transport stays bounded when prior answers contain large evidence registries", () => {
   const evidence = { records: Array.from({ length: 100 }, (_, id) => ({ id, summary: "я".repeat(500) })) };
@@ -78,4 +78,14 @@ test("ambiguous unresolved citation markers never link to a coincidentally match
   assert.equal(citedRecordForMarker("[R1]", evidence), null);
   assert.equal(citedRecordForMarker("[R2]", evidence), null);
   assert.equal(citedRecordForMarker("[R1]", { ...evidence, unresolvedCitations: [] })?.recordId, "h1");
+});
+
+test("manual links open the cited PDF under the mounted app from current and saved messages", () => {
+  const base = "https://app.test";
+  const appPath = (path) => "/demo" + path;
+  for (const url of ["/api/manuals/example.pdf", "/demo/api/manuals/example.pdf", base + "/api/manuals/example.pdf"]) {
+    assert.equal(sourceHref({ url, pdfPage: 5 }, base, appPath), base + "/demo/api/manuals/example.pdf#page=5");
+  }
+  assert.equal(sourceHref({ url: "https://docs.test/source" }, base, appPath), "https://docs.test/source");
+  assert.equal(sourceHref({ url: "//docs.test/source" }, base, appPath), null);
 });

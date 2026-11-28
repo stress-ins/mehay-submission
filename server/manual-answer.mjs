@@ -14,7 +14,7 @@ export function isValveCoverFastenerTorqueQuestion(query) {
     && (/клапан.{0,50}крыш|крыш.{0,50}клапан|valve.{0,50}cover|cover.{0,50}valve|वाल्व.{0,40}कवर|сарпӯш.{0,40}клапан|klapan.{0,40}qopqog/iu.test(query));
 }
 
-function isValveCoverTorqueEvidence(text) { return valveCoverTorqueRows(text).length > 0; }
+function isValveCoverTorqueEvidence(text, engineModel) { return valveCoverTorqueRows(text, engineModel).length > 0; }
 
 function insufficientValveCoverTorque(language) {
   return ({
@@ -42,7 +42,7 @@ export function roadworthinessAnswer(language = "ru") {
 }
 
 export function valveCoverFastenerTorqueAssessment(pages, language = "ru") {
-  const results = pages.flatMap(page => valveCoverTorqueRows(page.text).map(text => ({ ...page, text: text.trim() })));
+  const results = pages.flatMap(page => valveCoverTorqueRows(page.text, page.manual?.engine).map(text => ({ ...page, text: text.trim() })));
   const answerRows = results.filter(({ text }) => /^болт[\p{L}]*(?=\s|$)/iu.test(text)
     && /затян|заверн|подтян|закреп/iu.test(text));
   if (!answerRows.length) return { answer: insufficientValveCoverTorque(language), results: [], manualAssessment: "insufficient_evidence" };
@@ -115,7 +115,7 @@ export async function answerFromManuals({ pages, engineModel, fault, query, prev
   if (isRoadworthinessQuestion(query)) return { answer: roadworthinessAnswer(language), results: [] };
   if (isValveTimingQuestion(engineModel, retrievalQuery)) return valveTimingAssessment(pages, language);
   const valveCoverTorqueQuestion = isValveCoverFastenerTorqueQuestion(retrievalQuery);
-  if (valveCoverTorqueQuestion && !pages.some(({ text }) => isValveCoverTorqueEvidence(text))) {
+  if (valveCoverTorqueQuestion && !pages.some(({ text }) => isValveCoverTorqueEvidence(text, engineModel))) {
     return { answer: insufficientValveCoverTorque(language), results: [], manualAssessment: "insufficient_evidence" };
   }
   if (isYamzMainBearingTorqueQuestion(engineModel, retrievalQuery)) {
@@ -156,8 +156,8 @@ export async function answerFromManuals({ pages, engineModel, fault, query, prev
       }
       const excerpt = lines[page].slice(start, last + 1).join("\n");
       if (/гидротолкател/iu.test([query, previousQuestion].join(" ")) && !/гидротолкател/iu.test(excerpt)) continue;
-      if (valveCoverTorqueQuestion && !isValveCoverTorqueEvidence(excerpt)) continue;
-      results.push({ ...pages[page], text: valveCoverTorqueQuestion ? valveCoverTorqueRows(excerpt).join("\n") : excerpt });
+      if (valveCoverTorqueQuestion && !isValveCoverTorqueEvidence(excerpt, engineModel)) continue;
+      results.push({ ...pages[page], text: valveCoverTorqueQuestion ? valveCoverTorqueRows(excerpt, engineModel).join("\n") : excerpt });
     }
     if (valveCoverTorqueQuestion && !results.length) {
       return { answer: insufficientValveCoverTorque(language), results: [], manualAssessment: "insufficient_evidence" };

@@ -8,6 +8,43 @@ type Source = { title: string; url: string; type: string; origin?: string; verif
 const kindLabel = { history: "Работа", request: "Заявка", diagnostic: "Диагностика", note: "Заметка" };
 const timestamp = (value: string) => Number.isNaN(Date.parse(value)) ? "Дата не указана" : new Date(value).toLocaleString("ru-RU");
 
+export function AnswerText({ text, evidence, recordLink }: {
+  text: string;
+  evidence?: AssistantEvidence;
+  recordLink?: (record: EvidenceRecord, label: string) => React.ReactNode;
+}) {
+  return text.split(/\n{2,}/).map((block, blockIndex) => {
+    const lines = block.split("\n");
+    const formattedHeading = lines[0].match(/^\s*#{1,3}\s+(.+?)\s*$/)?.[1]
+      || lines[0].match(/^\s*\*\*([^*]+)\*\*\s*$/)?.[1];
+    const heading = formattedHeading || (lines.length > 1 && /^.{1,90}:$/.test(lines[0]) ? lines[0].slice(0, -1) : "");
+    const label = heading;
+    const Icon = /провер|действ|шаг/i.test(label) ? Wrench : /важно|вниман|не дел/i.test(label) ? CircleHelp : /данн|значен|напряж/i.test(label) ? Battery : /итог|вывод|результ/i.test(label) ? ClipboardCheck : BookOpenText;
+    const content = heading ? lines.slice(1).join("\n") : block;
+    const highlight = (line: string) => line.split(/(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|https?:\/\/[^\s<>]+|\[R\d+\]|(?<![\p{L}\d])\d+(?:[.,]\d+)?\s*(?:вольт|ампер|об\/мин|Н·м|°[CС]|кПа|бар|км|мм|В|V|А)(?![\p{L}\d]))/giu).map((part, index) => {
+        const markdownLink = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/i);
+        if (markdownLink) {
+          try { const url = new URL(markdownLink[2]); if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) return <a key={index} href={url.href} target="_blank" rel="noopener noreferrer">{markdownLink[1]}</a>; } catch { /* render unsafe or malformed link as text */ }
+        }
+        if (/^https?:\/\//i.test(part)) {
+          const cleanUrl = part.replace(/[.,!?;:)]+$/g, "");
+          try { const url = new URL(cleanUrl); if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) return <span key={index}><a href={url.href} target="_blank" rel="noopener noreferrer">{cleanUrl}</a>{part.slice(cleanUrl.length)}</span>; } catch { /* render malformed URL as text */ }
+        }
+        if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
+        const record = citedRecordForMarker(part, evidence);
+        return record && recordLink ? <span key={index}>{recordLink(record, part)}</span> : index % 2 === 1 && !/^\[R\d+\]$/.test(part) ? <strong className="answer-value" key={index}>{part}</strong> : <span key={index}>{part}</span>;
+    });
+    const contentLines = content.trim().split("\n");
+    const bullets = contentLines.every((line) => /^[-•]\s+/.test(line));
+    const numbered = contentLines.every((line) => /^\d+[.)]\s+/.test(line));
+    return <section className="answer-section" key={blockIndex}>
+      {heading && <h3><Icon size={17} aria-hidden="true" />{heading.replace(/\*\*/g, "")}</h3>}
+      {bullets ? <ul>{contentLines.map((line, index) => <li key={index}>{highlight(line.replace(/^[-•]\s+/, ""))}</li>)}</ul> : numbered ? <ol>{contentLines.map((line, index) => <li key={index}>{highlight(line.replace(/^\d+[.)]\s+/, ""))}</li>)}</ol> : content && <p>{contentLines.map((line, index) => <span key={index}>{index > 0 && <br />}{highlight(line)}</span>)}</p>}
+      {/(?:\d\s*(?:В|V)(?!\p{L})|вольт|напряжени)/iu.test(content) && <Battery className="answer-voltage-icon" size={17} aria-label="Указано напряжение" />}
+    </section>;
+  });
+}
+
 export default function AssistantAnswer({ answer, evidence, sources, webSearch, webDomain, appPath, onOpen }: {
   answer: string;
   evidence?: AssistantEvidence;
@@ -26,42 +63,13 @@ export default function AssistantAnswer({ answer, evidence, sources, webSearch, 
   const safeSources = (sources || []).filter((source) => {
     try { const url = new URL(source.url); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password; } catch { return false; }
   });
-  const renderAnswer = (text: string) => text.split(/\n{2,}/).map((block, blockIndex) => {
-    const lines = block.split("\n");
-    const formattedHeading = lines[0].match(/^\s*(?:#{1,3}\s+|\*\*)(.+?)(?:\*\*)?\s*$/)?.[1];
-    const heading = formattedHeading || (lines.length > 1 && /^.{1,90}:$/.test(lines[0]) ? lines[0].slice(0, -1) : "");
-    const label = heading;
-    const Icon = /провер|действ|шаг/i.test(label) ? Wrench : /важно|вниман|не дел/i.test(label) ? CircleHelp : /данн|значен|напряж/i.test(label) ? Battery : /итог|вывод|результ/i.test(label) ? ClipboardCheck : BookOpenText;
-    const content = heading ? lines.slice(1).join("\n") : block;
-    const highlight = (line: string) => line.split(/(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|https?:\/\/[^\s<>]+|\[R\d+\]|(?<![\p{L}\d])\d+(?:[.,]\d+)?\s*(?:вольт|ампер|об\/мин|Н·м|°[CС]|кПа|бар|км|мм|В|V|А)(?![\p{L}\d]))/giu).map((part, index) => {
-        const markdownLink = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/i);
-        if (markdownLink) {
-          try { const url = new URL(markdownLink[2]); if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) return <a key={index} href={url.href} target="_blank" rel="noopener noreferrer">{markdownLink[1]}</a>; } catch { /* render unsafe or malformed link as text */ }
-        }
-        if (/^https?:\/\//i.test(part)) {
-          const cleanUrl = part.replace(/[.,!?;:)]+$/g, "");
-          try { const url = new URL(cleanUrl); if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) return <span key={index}><a href={url.href} target="_blank" rel="noopener noreferrer">{cleanUrl}</a>{part.slice(cleanUrl.length)}</span>; } catch { /* render malformed URL as text */ }
-        }
-        if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
-        const record = citedRecordForMarker(part, evidence);
-        return record ? <span key={index}>{recordLink(record, part)}</span> : index % 2 === 1 && !/^\[R\d+\]$/.test(part) ? <strong className="answer-value" key={index}>{part}</strong> : <span key={index}>{part}</span>;
-    });
-    const contentLines = content.trim().split("\n");
-    const bullets = contentLines.every((line) => /^[-•]\s+/.test(line));
-    const numbered = contentLines.every((line) => /^\d+[.)]\s+/.test(line));
-    return <section className="answer-section" key={blockIndex}>
-      {heading && <h3><Icon size={17} aria-hidden="true" />{heading.replace(/\*\*/g, "")}</h3>}
-      {bullets ? <ul>{contentLines.map((line, index) => <li key={index}>{highlight(line.replace(/^[-•]\s+/, ""))}</li>)}</ul> : numbered ? <ol>{contentLines.map((line, index) => <li key={index}>{highlight(line.replace(/^\d+[.)]\s+/, ""))}</li>)}</ol> : content && <p>{contentLines.map((line, index) => <span key={index}>{index > 0 && <br />}{highlight(line)}</span>)}</p>}
-      {/(?:\d\s*(?:В|V)(?!\p{L})|вольт|напряжени)/iu.test(content) && <Battery className="answer-voltage-icon" size={17} aria-label="Указано напряжение" />}
-    </section>;
-  });
   const recordList = (records: EvidenceRecord[]) => records.map((record) => <article className="evidence-record" key={record.id}>
     <span className="badge text-bg-secondary">{translateSystemText(kindLabel[record.kind], locale)} · {record.vehiclePlate}</span>
     <strong>{record.title}</strong><small>{timestamp(record.date)}</small><p>{record.summary}</p>
     {recordLink(record, `Открыть запись [${record.id}]`)}
   </article>);
   return <div className="assistant-answer">
-    <div className="assistant-answer-text">{renderAnswer(answer)}</div>
+    <div className="assistant-answer-text"><AnswerText text={answer} evidence={evidence} recordLink={recordLink} /></div>
     {evidence && <>
       <small className="evidence-caption">Сверка ссылок: {timestamp(evidence.checkedAt)}. Снимок отражает данные на момент ответа; переход открывает актуальную запись.</small>
       {evidence.unresolvedCitations.length > 0 && <p className="alert alert-warning">Не подтверждены ссылки: {evidence.unresolvedCitations.join(", ")}.</p>}

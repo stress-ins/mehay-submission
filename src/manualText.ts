@@ -2,6 +2,10 @@ const stepStart = /^(?:(?:\d+[.)])|(?:[\p{L}][.)])|[-•])\s+/u;
 
 export function normalizeManualText(text: string): string {
   const lines = text
+    .replace(/\u00ad(?:\r?\n[\t ]*)?/gu, "")
+    // PDF extraction may retain a printed break inside these workshop terms.
+    .replace(/(ша)[-‐][ \t\r\n]+(тунн)/giu, "$1$2")
+    .replace(/(локали)[-‐][ \t\r\n]+(зова)/giu, "$1$2")
     .replace(/([\p{L}])[-‐‑]\r?\n[\t ]*([\p{L}])/gu, "$1-$2")
     .replace(/\r\n?/gu, "\n")
     .split("\n");

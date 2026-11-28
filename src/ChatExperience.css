@@ -184,7 +184,7 @@
 .chat-composer .drawer-compose textarea { min-height: 5.5rem; max-height: 32vh; resize: vertical; }
 .chat-composer .drawer-note { margin: 0; }
 .chat-composer > button { width: 100%; min-height: 44px; }
-.chat-width-setting { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .5rem; }
+.chat-width-setting { display: grid; flex: 0 1 8rem; min-width: 4rem; margin-inline-start: auto; gap: .2rem; font-size: .875rem; }
 .chat-width-setting input { grid-column: 1 / -1; width: 100%; }
 .chat-thread > .chat-empty { flex: 0 0 auto; }
 .chat-message > p { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -271,24 +271,17 @@
 }
 @media (max-width: 620px) {
   .header-assistant-dialog { width: 100% !important; }
+  .header-assistant-dialog .chat-width-setting { display: none; }
 }
-.diagnostic-assistant > .drawer-head {
-  position: sticky;
-  z-index: 1;
-  top: 0;
-  padding: 1rem;
-  background: var(--paper);
+.diagnostic-assistant,
+.diagnostic-assistant-host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
-.diagnostic-assistant .neuro-qa {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  gap: 1rem;
-  margin: 0;
-  padding: 1rem;
-  border: 0;
-}
-.diagnostic-assistant .neuro-qa > * { margin-block: 0; }
+.diagnostic-assistant { height: 100%; }
+.diagnostic-assistant-host { flex: 1 1 0; overflow-y: auto; }
+.diagnostic-assistant > .drawer-head { padding: 1rem; background: var(--paper); }
 .diagnostic-assistant .mechanic-voice { padding: .75rem; }
 @media (max-width: 1190px) {
   .header-assistant-actions button { padding-inline: .5rem; }

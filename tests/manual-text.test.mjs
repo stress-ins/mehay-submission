@@ -10,3 +10,7 @@ test("manual text joins hard wraps while preserving paragraphs and ordered lette
 test("manual reflow keeps technical hyphens, list markers, and existing cached text", () => {
   assert.equal(normalizeManualText("Снять топливно-\nнасосный модуль.\n1. Заменить форсунку.\n2. Проверить 25 Н·м."), "Снять топливно-насосный модуль.\n1. Заменить форсунку.\n2. Проверить 25 Н·м.");
 });
+
+test("manual reflow removes discretionary and printed splits in workshop text", () => {
+  assert.equal(normalizeManualText("ша-\nтунных, локали- зовать, про\u00ad\nверить"), "шатунных, локализовать, проверить");
+});

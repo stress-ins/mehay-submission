@@ -4,15 +4,29 @@ import { hasStepValue, type MechanicPlanLanguage } from "./neuroPlanIntents";
 import { useSystemLanguage } from "./systemLanguage";
 import { translateInterfaceText as t } from "./systemTranslations";
 import { normalizeManualText } from "./manualText";
+import { AnswerText } from "./AssistantAnswer";
 import "./NeuroWorkflow.css";
 
 export type ManualEvidenceItem = { text: string; sourceText?: string; excerpt?: string; illustrationUrl?: string; illustrationPage?: number; illustrationCaption?: string; language?: MechanicPlanLanguage; originalLanguage?: boolean; translations?: Partial<Record<Exclude<MechanicPlanLanguage, "ru">, string>>; title?: string; manual: string; pdfPage: number; url: string };
 export type NeuroChatTurn = { manualVerified?: boolean; sessionId?: string; author?: string; role: "mechanic" | "assistant"; text: string; evidence: ManualEvidenceItem[] };
 
-export function NeuroChatHistory({ turns, appPath }: { turns: NeuroChatTurn[]; appPath: (path: string) => string }) {
+export function NeuroChatHistory({ turns, appPath, pendingQuestion = "", pending = false }: { turns: NeuroChatTurn[]; appPath: (path: string) => string; pendingQuestion?: string; pending?: boolean }) {
   const language = useSystemLanguage();
-  if (!turns.length) return null;
-  return <div className="neuro-chat-history" aria-live="polite"><h3>{t("История вопросов по машине", language)}</h3>{turns.map((turn, i) => <article key={`${i}-${turn.role}`} className={`neuro-turn ${turn.role}`}><strong>{turn.role === "mechanic" ? turn.author || t("Механик", language) : turn.manualVerified === false ? ({ ru: "Запись механика", en: "Mechanic’s record", hi: "मैकेनिक का नोट", tg: "Сабти механик", uz: "Mexanik qaydi" })[language] : t("Ответ по источникам", language)}</strong>{turn.sessionId && turn.role === "mechanic" && <small> · {turn.sessionId}</small>}<p>{turn.text}</p>{turn.evidence.map((item, j) => <ManualEvidence key={`${item.manual}-${item.pdfPage}-${j}`} item={item} appPath={appPath} />)}</article>)}</div>;
+  const historyRef = useRef<HTMLDivElement>(null);
+  const wasAtBottom = useRef(true);
+  useEffect(() => {
+    const thread = historyRef.current?.closest<HTMLElement>(".neuro-qa-thread");
+    if (!thread) return;
+    const updatePosition = () => { wasAtBottom.current = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 96; };
+    thread.addEventListener("scroll", updatePosition, { passive: true });
+    return () => thread.removeEventListener("scroll", updatePosition);
+  }, []);
+  useEffect(() => {
+    const thread = historyRef.current?.closest<HTMLElement>(".neuro-qa-thread");
+    if (thread && wasAtBottom.current) thread.scrollTop = thread.scrollHeight;
+  }, [turns.length, pendingQuestion, pending]);
+  if (!turns.length && !pendingQuestion) return null;
+  return <div ref={historyRef} className="neuro-chat-history" aria-live="polite"><h3>{t("История вопросов по машине", language)}</h3>{turns.map((turn, i) => <article key={`${i}-${turn.role}`} className={`neuro-turn ${turn.role}`}><strong>{turn.role === "mechanic" ? turn.author || t("Механик", language) : turn.manualVerified === false ? ({ ru: "Запись механика", en: "Mechanic’s record", hi: "मैकेनिक का नोट", tg: "Сабти механик", uz: "Mexanik qaydi" })[language] : t("Ответ по источникам", language)}</strong>{turn.sessionId && turn.role === "mechanic" && <small> · {turn.sessionId}</small>}{turn.role === "assistant" ? <div className="neuro-turn-answer"><AnswerText text={normalizeManualText(turn.text)} /></div> : <p>{normalizeManualText(turn.text)}</p>}{turn.evidence.map((item, j) => <ManualEvidence key={`${item.manual}-${item.pdfPage}-${j}`} item={item} appPath={appPath} />)}</article>)}{pendingQuestion && <><article className="neuro-turn mechanic"><strong>{t("Механик", language)}</strong><p>{normalizeManualText(pendingQuestion)}</p></article><article className="neuro-turn assistant" role="status"><strong>{t("Ответ по источникам", language)}</strong>{pending ? <p className="neuro-chat-pending"><span>{t("Ищем ответ в руководствах…", language)}</span><span className="neuro-chat-typing" aria-hidden="true"><i /><i /><i /></span></p> : <p>{t("Ответ не удалось получить. Попробуйте ещё раз.", language)}</p>}</article></>}</div>;
 }
 
 function pageImageUrl(pdfUrl: string): string | null {

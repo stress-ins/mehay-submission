@@ -2205,6 +2205,7 @@ export function createApp({
       const assessment = manualEngineMatchesVehicle
         ? valveCoverFastenerTorqueAssessment(await valveCoverTorqueSearch({ engineModel, query: b.message }), b.language || "ru")
         : valveCoverFastenerTorqueAssessment([], b.language || "ru");
+      if (assessment.manualAssessment === "sourced") evidence.technicalCards = evidence.technicalCards.filter(card => card.id !== "torque");
       return res.json({ ...assessment, model, evidence,
         sources: assessment.results.map((chunk, i) => ({ id: `manual-${i + 1}`, title: chunk.manual.title, type: "manual", manual: chunk.manual.title,
           manualId: chunk.manual.id, pdfPage: chunk.pdfPage,

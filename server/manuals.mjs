@@ -35,19 +35,23 @@ function torqueSegments(line) {
 }
 
 function focusValveCoverTorqueRow(text) {
-  const target = valveCoverTarget.exec(text);
-  if (!target) return "";
-  const beforeTarget = text.slice(0, target.index);
-  const fasteners = [...beforeTarget.matchAll(/болт[\p{L}]*/giu)];
-  if (!fasteners.length) return "";
-  return text.slice(fasteners.at(-1).index).trim();
+  // Require the fastener, its component, the action and the value in a single clause.
+  const match = /болт[\p{L}]*\s+(?:крепления\s+)?(?:крышки\s+клапанов|клапанной\s+крышки)\s+(?:затянуть|завернуть|подтянуть)\s+(?:с\s+)?моментом\s+(?:от\s+)?\d/iu.exec(text);
+  return match ? text.slice(match.index).trim() : "";
 }
 
 export function valveCoverTorqueRows(text, engineModel) {
   const selected = engineModel ? engineKey(engineModel) : null;
   const lines = text.split(/\r?\n/u);
   const rows = [];
+  let sectionApplies = true;
   for (let index = 0; index < lines.length; index++) {
+    const line = lines[index].trim();
+    if (selected && /(?:ЗМЗ|ЯМЗ|ZMZ|YaMZ)[\s-]*\d/iu.test(line)
+      && !valveCoverFastener.test(line) && (line.endsWith(":") || /^(?:только\s+)?(?:для\s+)?(?:двигател[ья]\s+)?(?:ЗМЗ|ЯМЗ|ZMZ|YaMZ)[\s-]*[\d.а-яa-z-]+[.]?$/iu.test(line))) {
+      sectionApplies = queryMatchesEngine(line, selected);
+    }
+    if (!sectionApplies) continue;
     for (const segment of torqueSegments(lines[index])) {
       const normalized = segment.replace(/\s+/gu, " ").trim();
       if (valveCoverTarget.test(normalized) && valveCoverFastener.test(normalized) && torqueValue.test(normalized) && torqueUnit.test(normalized)

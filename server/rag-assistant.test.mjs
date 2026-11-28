@@ -181,6 +181,7 @@ test("general assistant uses the vehicle-card engine and exposes only the matchi
   assert.equal(requested.engineModel, "ЯМЗ-236М2", "engine should default to the vehicle card");
   const body = await response.json();
   assert.equal(body.manualAssessment, "sourced");
+  assert.deepEqual(body.evidence.technicalCards, []);
   assert.match(body.answer, /крышки клапанов.*8 Н·м/);
   assert.doesNotMatch(body.answer, /24\s*Н·м/);
   assert.equal(body.sources.length, 1);

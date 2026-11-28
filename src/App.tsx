@@ -992,6 +992,8 @@ function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssis
         const noChecks = ({ ru: "Замеров нет.", en: "No measurements.", hi: "कोई मापन नहीं।", tg: "Санҷиш нест.", uz: "O‘lchovlar yo‘q." } as const)[voiceLanguage];
         const noTickets = ({ ru: "Заявок нет.", en: "No tickets.", hi: "कोई टिकट नहीं।", tg: "Дархост нест.", uz: "Arizalar yo‘q." } as const)[voiceLanguage];
         const reply = `${lead} ${labels.measurements} ${checks.length ? checks.join("; ") : noChecks} ${labels.tickets} ${tickets.length ? tickets.join("; ") : noTickets}`;
+        rememberExchange(query, reply);
+        speakVoiceReply(reply);
       } catch (cause) { if (!isCurrent()) return; restoreQuestion(); voiceReplyPending.current = false; setError(cause instanceof Error ? cause.message : "Историю машины загрузить не удалось."); }
       return;
     }
@@ -1000,6 +1002,8 @@ function NeuroDvsPage({ assistantHost, assistantMode, assistantOpenId, openAssis
       try {
         if (diagnosis?.guidance.status !== "anomaly") {
           const reply = ({ ru: "Сначала выполните диагностику, чтобы подобрать сопоставимые записи истории ремонта.", en: "Run diagnostics first to find comparable repair records.", hi: "मिलते-जुलते मरम्मत रिकॉर्ड खोजने के लिए पहले निदान करें।", tg: "Барои ёфтани сабтҳои монанд аввал ташхис гузаронед.", uz: "O‘xshash taʼmirlash yozuvlarini topish uchun avval tashxis o‘tkazing." } as const)[voiceLanguage];
+          rememberExchange(query, reply);
+          speakVoiceReply(reply);
           return;
         }
         const history = await api<RepairExperienceData>(`/api/neuro/experience?${new URLSearchParams({ vehicleId, sessionId })}`);

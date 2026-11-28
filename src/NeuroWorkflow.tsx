@@ -14,13 +14,14 @@ export function NeuroChatHistory({ turns, appPath, pendingQuestion = "", pending
   const language = useSystemLanguage();
   const historyRef = useRef<HTMLDivElement>(null);
   const wasAtBottom = useRef(true);
+  const hasHistory = turns.length > 0 || Boolean(pendingQuestion);
   useEffect(() => {
     const thread = historyRef.current?.closest<HTMLElement>(".neuro-qa-thread");
     if (!thread) return;
     const updatePosition = () => { wasAtBottom.current = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 96; };
     thread.addEventListener("scroll", updatePosition, { passive: true });
     return () => thread.removeEventListener("scroll", updatePosition);
-  }, []);
+  }, [hasHistory]);
   useEffect(() => {
     const thread = historyRef.current?.closest<HTMLElement>(".neuro-qa-thread");
     if (thread && wasAtBottom.current) thread.scrollTop = thread.scrollHeight;

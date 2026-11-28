@@ -88,11 +88,11 @@
 .chat-message .evidence-source-link { display: grid; grid-template-columns: 36px minmax(0, 1fr) 16px; align-items: start; gap: 10px; color: inherit; text-decoration: none; }
 .manual-illustration { display: grid; justify-items: start; gap: 4px; margin-top: 9px; }
 .manual-illustration-thumb { display: block; max-width: min(100%, 420px); padding: 0; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: var(--paper, #fff); cursor: zoom-in; }
-.manual-illustration-thumb img { display: block; width: 100%; height: auto; }
+.manual-illustration-thumb img { background: #fff; display: block; width: 100%; height: auto; }
 .manual-illustration > small { color: var(--muted); line-height: 1.4; }
 .manual-illustration-overlay { position: fixed; z-index: 10000; inset: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; overflow: auto; padding: 16px; background: rgb(0 0 0 / 88%); }
 .manual-illustration-overlay > button { justify-self: end; padding: 8px 12px; border: 1px solid #fff; border-radius: 7px; color: #fff; background: #222; cursor: pointer; }
-.manual-illustration-overlay > img { align-self: center; max-width: none; max-height: none; width: auto; height: auto; object-fit: initial; }
+.manual-illustration-overlay > img { background: #fff; flex-shrink: 0; align-self: center; max-width: none; max-height: none; width: auto; height: auto; object-fit: initial; }
 .answer-source-item { display: grid; gap: 4px; }
 .answer-source-item > a { display: block; }
 .chat-message .evidence-source-icon { display: grid; place-items: center; width: 36px; height: 36px; color: var(--accent, #3278a5); border-radius: 9px; background: color-mix(in srgb, var(--accent, #3278a5) 12%, transparent); }

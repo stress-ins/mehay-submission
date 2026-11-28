@@ -1,4 +1,4 @@
-import { isValveTimingQuestion } from "./manuals.mjs";
+import { isValveTimingQuestion, valveCoverTorqueRows } from "./manuals.mjs";
 import { valveTimingAssessment } from "./manual-valve-timing.mjs";
 
 export function isYamzMainBearingTorqueQuestion(engineModel, query) {
@@ -6,6 +6,24 @@ export function isYamzMainBearingTorqueQuestion(engineModel, query) {
   return /^(?:ямз|yamz)236(?:м|m)2$/iu.test(engine)
     && /коренн.{0,40}(?:подшипник|опор)|(?:подшипник|опор).{0,40}коренн/iu.test(query)
     && /момент|затяж|болт|креплен/iu.test(query);
+}
+
+export function isValveCoverFastenerTorqueQuestion(query) {
+  return /момент|затяж|уровень затяж|torque|tighten|टॉर्क|कस|моменти|маҳкам|moment|tortish|mahkam|burash/iu.test(query)
+    && /болт|крепеж|креплен|шпил|bolt|fastener|बोल्ट/iu.test(query)
+    && (/клапан.{0,50}крыш|крыш.{0,50}клапан|valve.{0,50}cover|cover.{0,50}valve|वाल्व.{0,40}कवर|сарпӯш.{0,40}клапан|klapan.{0,40}qopqog/iu.test(query));
+}
+
+function isValveCoverTorqueEvidence(text, engineModel) { return valveCoverTorqueRows(text, engineModel).length > 0; }
+
+function insufficientValveCoverTorque(language) {
+  return ({
+    ru: "В найденных страницах нет подтверждённого момента затяжки именно болтов клапанной крышки с единицами измерения. Значение для другой детали применять нельзя; проверьте руководство для выбранного двигателя или уточните его модель.",
+    en: "The retrieved pages do not confirm a torque value and units for the valve-cover bolts specifically. A value for another part cannot be used; check the manual for the selected engine or confirm its model.",
+    hi: "मिले हुए पृष्ठों में वाल्व कवर के बोल्टों के लिए ही टॉर्क और इकाइयों की पुष्टि नहीं है। किसी दूसरे पुर्ज़े का मान लागू नहीं किया जा सकता; चुने गए इंजन का मैनुअल जाँचें या उसका मॉडल स्पष्ट करें।",
+    tg: "Дар саҳифаҳои ёфтшуда моменти маҳкамкунии маҳз болтҳои сарпӯши клапан бо воҳидҳои ченак тасдиқ нашудааст. Қимати қисми дигарро истифода бурдан мумкин нест; дастури муҳаррики интихобшударо санҷед ё модели онро дақиқ кунед.",
+    uz: "Topilgan sahifalarda aynan klapan qopqog‘i boltlarining tortish momenti va o‘lchov birliklari tasdiqlanmagan. Boshqa detal qiymatini qo‘llab bo‘lmaydi; tanlangan dvigatel qo‘llanmasini tekshiring yoki modelini aniqlashtiring.",
+  })[language] || "В найденных страницах нет подтверждённого момента затяжки именно болтов клапанной крышки с единицами измерения. Значение для другой детали применять нельзя; проверьте руководство для выбранного двигателя или уточните его модель.";
 }
 
 export function isRoadworthinessQuestion(query) {
@@ -21,6 +39,28 @@ export function roadworthinessAnswer(language = "ru") {
     tg: "Маълумоти мавҷуд барои муайян кардани он ки мошинро бо қувваи худ бурдан мумкин аст ё не, кофӣ нест. Иҷозати ҳаракатро механик баъди азназаргузаронӣ арзёбӣ мекунад; ин ҷавоб бехатарии ҳаракатро тасдиқ намекунад.",
     uz: "Mavjud ma’lumotlar avtomobilni o‘z yurishi bilan olib borish mumkinligini aniqlash uchun yetarli emas. Harakatga ruxsatni mexanik ko‘rikdan keyin baholaydi; bu javob harakat xavfsizligini tasdiqlamaydi.",
   })[language] || "По имеющимся данным нельзя определить, можно ли перегонять автомобиль своим ходом. Допуск к движению оценивает механик после осмотра; этот ответ не подтверждает безопасность движения.";
+}
+
+export function valveCoverFastenerTorqueAssessment(pages, language = "ru") {
+  const results = pages.flatMap(page => valveCoverTorqueRows(page.text, page.manual?.engine).map(text => ({ ...page, text: text.trim() })));
+  const answerRows = results.filter(({ text }) => /^болт[\p{L}]*(?=\s|$)/iu.test(text)
+    && /затян|заверн|подтян|закреп/iu.test(text));
+  if (!answerRows.length) return { answer: insufficientValveCoverTorque(language), results: [], manualAssessment: "insufficient_evidence" };
+  const signatures = text => [...text.matchAll(/\d[\d,.]*(?:\s*(?:\.{2,}|[–−-])\s*\d[\d,.]*)?\s*(?:н\s*[·⋅.]?\s*м|кгс\s*[·⋅.]\s*м)/giu)]
+    .map(([value]) => value.toLocaleLowerCase("ru").replace(/\s+/gu, "").replace(/\.{2,}|[–−]/gu, "-")).join(";");
+  const distinctValues = new Set(answerRows.map(({ text }) => signatures(text)));
+  const rowsToAnswer = distinctValues.size === 1 ? [answerRows[0]] : answerRows;
+  return { answer: rowsToAnswer.map(({ text }) => text).join("\n"), results, manualAssessment: "sourced" };
+}
+
+export function missingTorqueContextAnswer(language = "ru") {
+  return ({
+    ru: "Чтобы назвать момент затяжки, нужны точная модель автомобиля и двигателя, узел и применимое руководство. Без этих данных числовое значение не подтверждено.",
+    en: "A torque value requires the exact vehicle and engine model, the part, and an applicable manual. Without that context, no numeric value is confirmed.",
+    hi: "टॉर्क बताने के लिए वाहन और इंजन का सटीक मॉडल, पुर्जा और लागू मैनुअल चाहिए। इनके बिना कोई संख्यात्मक मान पुष्ट नहीं है।",
+    tg: "Барои гуфтани моменти маҳкамкунӣ модели дақиқи мошин ва муҳаррик, қисм ва дастури мувофиқ лозим аст. Бе ин маълумот қимати ададӣ тасдиқ нашудааст.",
+    uz: "Tortish momentini aytish uchun avtomobil va dvigatelning aniq modeli, detal va mos qo‘llanma kerak. Bu ma’lumotlarsiz sonli qiymat tasdiqlanmagan.",
+  })[language] || "Чтобы назвать момент затяжки, нужны точная модель автомобиля и двигателя, узел и применимое руководство. Без этих данных числовое значение не подтверждено.";
 }
 
 export function yamzMainBearingTorqueAssessment(pages, language = "ru") {
@@ -74,6 +114,10 @@ export async function answerFromManuals({ pages, engineModel, fault, query, prev
   // A repair excerpt alone cannot establish roadworthiness for this vehicle.
   if (isRoadworthinessQuestion(query)) return { answer: roadworthinessAnswer(language), results: [] };
   if (isValveTimingQuestion(engineModel, retrievalQuery)) return valveTimingAssessment(pages, language);
+  const valveCoverTorqueQuestion = isValveCoverFastenerTorqueQuestion(retrievalQuery);
+  if (valveCoverTorqueQuestion && !pages.some(({ text }) => isValveCoverTorqueEvidence(text, engineModel))) {
+    return { answer: insufficientValveCoverTorque(language), results: [], manualAssessment: "insufficient_evidence" };
+  }
   if (isYamzMainBearingTorqueQuestion(engineModel, retrievalQuery)) {
     const assessment = yamzMainBearingTorqueAssessment(pages, language);
     if (assessment) return assessment;
@@ -112,7 +156,11 @@ export async function answerFromManuals({ pages, engineModel, fault, query, prev
       }
       const excerpt = lines[page].slice(start, last + 1).join("\n");
       if (/гидротолкател/iu.test([query, previousQuestion].join(" ")) && !/гидротолкател/iu.test(excerpt)) continue;
-      results.push({ ...pages[page], text: excerpt });
+      if (valveCoverTorqueQuestion && !isValveCoverTorqueEvidence(excerpt, engineModel)) continue;
+      results.push({ ...pages[page], text: valveCoverTorqueQuestion ? valveCoverTorqueRows(excerpt, engineModel).join("\n") : excerpt });
+    }
+    if (valveCoverTorqueQuestion && !results.length) {
+      return { answer: insufficientValveCoverTorque(language), results: [], manualAssessment: "insufficient_evidence" };
     }
     return { results };
   } catch {

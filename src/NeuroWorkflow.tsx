@@ -30,11 +30,20 @@ export function NeuroChatHistory({ turns, appPath, pendingQuestion = "", pending
   return <div ref={historyRef} className="neuro-chat-history" aria-live="polite"><h3>{t("История вопросов по машине", language)}</h3>{turns.map((turn, i) => <article key={`${i}-${turn.role}`} className={`neuro-turn ${turn.role}`}><strong>{turn.role === "mechanic" ? turn.author || t("Механик", language) : turn.manualVerified === false ? ({ ru: "Запись механика", en: "Mechanic’s record", hi: "मैकेनिक का नोट", tg: "Сабти механик", uz: "Mexanik qaydi" })[language] : t("Ответ по источникам", language)}</strong>{turn.sessionId && turn.role === "mechanic" && <small> · {turn.sessionId}</small>}{turn.role === "assistant" ? <div className="neuro-turn-answer"><AnswerText text={normalizeManualText(turn.text)} /></div> : <p>{normalizeManualText(turn.text)}</p>}{turn.evidence.map((item, j) => <ManualEvidence key={`${item.manual}-${item.pdfPage}-${j}`} item={item} appPath={appPath} />)}</article>)}{pendingQuestion && <><article className="neuro-turn mechanic"><strong>{t("Механик", language)}</strong><p>{normalizeManualText(pendingQuestion)}</p></article><article className="neuro-turn assistant" role="status"><strong>{t("Ответ по источникам", language)}</strong>{pending ? <p className="neuro-chat-pending"><span>{t("Ищем ответ в руководствах…", language)}</span><span className="neuro-chat-typing" aria-hidden="true"><i /><i /><i /></span></p> : <p>{t("Ответ не удалось получить. Попробуйте ещё раз.", language)}</p>}</article></>}</div>;
 }
 
-function pageImageUrl(pdfUrl: string): string | null {
+function manualPageUrl(url: string, page: number, appPath: (path: string) => string): string {
+  const href = appPath(url);
+  try {
+    const parsed = new URL(href, window.location.origin);
+    if (page > 0 && /\.pdf$/i.test(parsed.pathname)) parsed.hash = `page=${page}`;
+    return parsed.href;
+  } catch { return href; }
+}
+
+function pageImageUrl(pdfUrl: string, pageNumber: number): string | null {
   try {
     const url = new URL(pdfUrl, window.location.origin);
     const match = url.pathname.match(/\/api\/manuals\/([^/]+)\.pdf$/u);
-    const page = Number(url.hash.match(/page=(\d+)/u)?.[1]);
+    const page = Number(url.hash.match(/page=(\d+)/u)?.[1]) || pageNumber;
     if (!match || !Number.isInteger(page) || page < 1) return null;
     return `/api/manuals/${encodeURIComponent(decodeURIComponent(match[1]))}/pages/${page}.png`;
   } catch { return null; }
@@ -44,7 +53,8 @@ export function ManualEvidence({ item, appPath, pageRequest = 0, linkLabel }: { 
   const language = useSystemLanguage();
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const image = pageImageUrl(item.url);
+  const pdfUrl = manualPageUrl(item.url, item.pdfPage, appPath);
+  const image = pageImageUrl(pdfUrl, item.pdfPage);
   const details = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     if (pageRequest && details.current) {
@@ -52,7 +62,7 @@ export function ManualEvidence({ item, appPath, pageRequest = 0, linkLabel }: { 
     }
   }, [pageRequest]);
   return <div className="neuro-evidence">
-    <a href={appPath(item.url)} target="_blank" rel="noreferrer">{linkLabel || `${item.manual}, ${t("стр.", language)} ${item.pdfPage}`}</a>
+    <a href={pdfUrl} target="_blank" rel="noreferrer">{linkLabel || `${item.manual}, ${t("стр.", language)} ${item.pdfPage}`}</a>
     {image && !failed ? <details ref={details} onToggle={(event) => setExpanded(event.currentTarget.open)}><summary><BookOpen size={17} aria-hidden="true" />{t(expanded ? "Скрыть страницу руководства" : "Показать страницу руководства", language)}</summary>{expanded && <img src={appPath(image)} alt={`${item.manual}, ${t("страница", language)} ${item.pdfPage}`} onError={() => setFailed(true)} />}</details> : failed ? <small role="status">{t("Изображение страницы временно недоступно. Откройте PDF.", language)}</small> : null}
   </div>;
 }

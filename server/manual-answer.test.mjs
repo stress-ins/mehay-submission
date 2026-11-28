@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { answerFromManuals, isRoadworthinessQuestion, isYamzMainBearingTorqueQuestion, translateManualText, yamzMainBearingTorqueAssessment } from "./manual-answer.mjs";
+import { answerFromManuals, isRoadworthinessQuestion, isValveCoverFastenerTorqueQuestion, isYamzMainBearingTorqueQuestion, translateManualText, valveCoverFastenerTorqueAssessment, yamzMainBearingTorqueAssessment } from "./manual-answer.mjs";
 
 test("sourced answers display only the selected original PDF lines", async t => {
   const original = process.env.OPENROUTER_API_KEY;
@@ -19,6 +19,64 @@ test("sourced answers display only the selected original PDF lines", async t => 
   const selected = await answerFromManuals({...lifterQuestion, fetchImpl: respond([{page: 0, first: 0, last: 0}, {page: 1, first: 0, last: 0}])});
   assert.deepEqual(selected.results, [lifterQuestion.pages[1]]);
   assert.deepEqual(await answerFromManuals({...query, fetchImpl: async () => new Response(null, {status:503})}), { results: [], answerUnavailable:true });
+});
+
+test("valve-cover torque answers require matching fastener, part, numeric value, and torque units", async t => {
+  const original = process.env.OPENROUTER_API_KEY;
+  t.after(() => {
+    if (original === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = original;
+  });
+  process.env.OPENROUTER_API_KEY = "mock";
+  const query = "Какой уровень затяжки болтов на клапанной крышке?";
+  const engineModel = "ЯМЗ-236М2";
+  const oilPan = { manual: { id: "synthetic-engine-manual", title: "Учебное руководство", engine: engineModel }, pdfPage: 12,
+    text: "Болты масляного картера затянуть моментом 24 Н·м." };
+  const noMatch = await answerFromManuals({ pages: [oilPan], engineModel, query,
+    fetchImpl: () => assert.fail("an unrelated part must not reach answer generation") });
+  assert.equal(noMatch.manualAssessment, "insufficient_evidence");
+  assert.deepEqual(noMatch.results, []);
+  assert.match(noMatch.answer, /именно болтов клапанной крышки/);
+  assert.doesNotMatch(noMatch.answer, /24\s*Н·м/);
+
+  const correct = { ...oilPan, pdfPage: 18, text: "Болты крепления крышки клапанов затянуть моментом 8 Н·м; болты масляного картера 24 Н·м." };
+  const sourced = await answerFromManuals({ pages: [correct], engineModel, query,
+    fetchImpl: async (_url, options) => {
+      const request = JSON.parse(options.body);
+      assert.equal(request.messages[1].content.includes("ЯМЗ-236М2"), true);
+      return Response.json({ choices: [{ message: { content: JSON.stringify({ spans: [{ page: 0, first: 0, last: 0 }] }) } }] });
+    } });
+  assert.deepEqual(sourced.results, [{ ...correct, text: "Болты крепления крышки клапанов затянуть моментом 8 Н·м" }]);
+
+  const separatedRows = { ...correct, text: "Болты клапанной крышки.\nБолты масляного картера затянуть моментом 24 Н·м." };
+  const noRowMatch = await answerFromManuals({ pages: [separatedRows], engineModel, query,
+    fetchImpl: () => Response.json({ choices: [{ message: { content: JSON.stringify({ spans: [{ page: 0, first: 0, last: 1 }] }) } }] }) });
+  assert.equal(noRowMatch.manualAssessment, "insufficient_evidence");
+  assert.deepEqual(noRowMatch.results, []);
+  assert.equal(isValveCoverFastenerTorqueQuestion(query), true);
+  assert.equal(isValveCoverFastenerTorqueQuestion("Какой момент у болтов масляного картера?"), false);
+});
+
+test("valve-cover torque answer starts at the complete fastener action and deduplicates equal source values", () => {
+  const pages = [61, 62].map(pdfPage => ({
+    manual: { id: "synthetic-guide", title: "Учебное руководство" }, pdfPage,
+    illustrationPage: pdfPage === 62 ? 63 : 61, figureNumber: pdfPage === 62 ? "48" : "46",
+    text: "…учебного узла. Болты крепления крышки клапанов затянуть моментом 7,1...9,3 Н·м (0,8...1,0 кгс·м).",
+  }));
+  const assessment = valveCoverFastenerTorqueAssessment(pages);
+  assert.match(assessment.answer, /^Болты крепления крышки клапанов затянуть моментом/u);
+  assert.equal((assessment.answer.match(/7,1\.\.\.9,3/gu) || []).length, 1);
+  assert.equal(assessment.results.length, 2);
+  assert.deepEqual(assessment.results.map(({ pdfPage, illustrationPage, figureNumber }) => ({ pdfPage, illustrationPage, figureNumber })), [
+    { pdfPage: 61, illustrationPage: 61, figureNumber: "46" },
+    { pdfPage: 62, illustrationPage: 63, figureNumber: "48" },
+  ]);
+
+  const differing = valveCoverFastenerTorqueAssessment([
+    pages[0], { ...pages[1], text: "…учебного узла. Болты крепления крышки клапанов затянуть моментом 10 Н·м." },
+  ]);
+  assert.match(differing.answer, /7,1\.\.\.9,3/u);
+  assert.match(differing.answer, /10 Н·м/u);
 });
 
 test("roadworthiness recognition covers movement decisions without catching mechanic questions", () => {

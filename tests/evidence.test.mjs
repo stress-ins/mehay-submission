@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assistantHistoryForRequest, citedRecordForMarker, readRecordTarget, recordReturnPath, resolveRecord } from "../src/evidence.ts";
+import { assistantHistoryForRequest, citedRecordForMarker, readRecordTarget, recordElementId, recordReturnPath, resolveRecord } from "../src/evidence.ts";
+import { manualIllustrationPath, sourceHref } from "../src/manualIllustrationPath.ts";
 
 test("conversation transport stays bounded when prior answers contain large evidence registries", () => {
   const evidence = { records: Array.from({ length: 100 }, (_, id) => ({ id, summary: "я".repeat(500) })) };
@@ -12,6 +13,13 @@ test("conversation transport stays bounded when prior answers contain large evid
   assert.ok(payload.every((message) => Object.keys(message).sort().join() === "content,role"));
   assert.ok(Buffer.byteLength(JSON.stringify(payload)) < 1024);
   assert.equal(history[0].evidence, evidence);
+});
+
+test("manual illustration is scoped to a valid page of its named manual", () => {
+  assert.equal(manualIllustrationPath({ url: "/api/manuals/manual-7.pdf#page=7", manualId: "manual-7", illustrationPage: 12, figureNumber: "4-2" }), "/api/manuals/manual-7/pages/12.png");
+  assert.equal(manualIllustrationPath({ url: "/api/manuals/manual-other.pdf", manualId: "manual-7", illustrationPage: 12 }), null);
+  assert.equal(manualIllustrationPath({ manualId: "other/manual", illustrationPage: 12 }), null);
+  assert.equal(manualIllustrationPath({ manualId: "manual-7", illustrationPage: 0 }), null);
 });
 
 test("conversation transport clips each message at the server content limit", () => {
@@ -53,6 +61,13 @@ test("record resolution uses current records and binds requests to their vehicle
   assert.equal(resolveRecord({ vehicleId: "v1", kind: "history", recordId: "deleted" }, vehicle, requests), null);
 });
 
+test("record DOM targets remain distinct when two vehicles reuse a record id", () => {
+  assert.notEqual(
+    recordElementId({ vehicleId: "v1", kind: "history", recordId: "same" }),
+    recordElementId({ vehicleId: "v2", kind: "history", recordId: "same" }),
+  );
+});
+
 test("ambiguous unresolved citation markers never link to a coincidentally matching record id", () => {
   const evidence = {
     records: [{ id: "R1", vehicleId: "v1", kind: "history", recordId: "h1", vehiclePlate: "A", title: "Work", date: "", summary: "" }],
@@ -63,4 +78,14 @@ test("ambiguous unresolved citation markers never link to a coincidentally match
   assert.equal(citedRecordForMarker("[R1]", evidence), null);
   assert.equal(citedRecordForMarker("[R2]", evidence), null);
   assert.equal(citedRecordForMarker("[R1]", { ...evidence, unresolvedCitations: [] })?.recordId, "h1");
+});
+
+test("manual links open the cited PDF under the mounted app from current and saved messages", () => {
+  const base = "https://app.test";
+  const appPath = (path) => "/demo" + path;
+  for (const url of ["/api/manuals/example.pdf", "/demo/api/manuals/example.pdf", base + "/api/manuals/example.pdf"]) {
+    assert.equal(sourceHref({ url, pdfPage: 5 }, base, appPath), base + "/demo/api/manuals/example.pdf#page=5");
+  }
+  assert.equal(sourceHref({ url: "https://docs.test/source" }, base, appPath), "https://docs.test/source");
+  assert.equal(sourceHref({ url: "//docs.test/source" }, base, appPath), null);
 });

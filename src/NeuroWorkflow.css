@@ -3,7 +3,8 @@
 .neuro-system-message { display: grid; gap: .35rem; border-left: 4px solid #2563eb; }
 .neuro-quick-nav { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
 .neuro-quick-nav button { min-height: 56px; padding: .75rem 1.25rem; border: 1px solid var(--line, #cbd5e1); border-radius: .65rem; background: var(--paper, #fff); color: var(--ink, #1f2937); font-size: 1rem; font-weight: 650; cursor: pointer; }
-.neuro-quick-nav button:hover, .neuro-quick-nav button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.neuro-quick-nav button:hover { outline: 2px solid #2563eb; outline-offset: 2px; }
+.neuro-quick-nav button:focus-visible { outline: 3px solid #1769aa; outline-offset: 2px; }
 @media (max-width: 600px) {
   .neuro-quick-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
   .neuro-quick-nav button:only-child { grid-column: 1 / -1; }
@@ -17,6 +18,7 @@
 .neuro-plan-return:focus-visible, .neuro-step-plan button:focus-visible, .neuro-quick-nav button:focus-visible { outline: 3px solid #1769aa; outline-offset: 2px; }
 .neuro-dvs form button:focus-visible, .neuro-result .neuro-section button:focus-visible { outline: 3px solid #1769aa; outline-offset: 2px; }
 .shell[data-theme="dark"] .neuro-plan-return:focus-visible, .shell[data-theme="dark"] .neuro-step-plan button:focus-visible, .shell[data-theme="dark"] .neuro-quick-nav button:focus-visible, .shell[data-theme="dark"] .neuro-dvs form button:focus-visible, .shell[data-theme="dark"] .neuro-result .neuro-section button:focus-visible { outline-color: #9bd5ff; }
+.shell[data-theme="dark"] .neuro-quick-nav button:hover:not(:focus-visible) { outline-color: #9bd5ff; }
 .neuro-workflow--plan-only { margin: 0; }
 .neuro-workflow--plan-only .neuro-step-plan { padding: 0; border: 0; background: transparent; }
 .neuro-workflow--plan-only .neuro-step-plan h3 { margin-bottom: 1rem; }

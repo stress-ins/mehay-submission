@@ -24,6 +24,61 @@ export function isValveTimingQuestion(engineModel, query) {
   return selected === "yamz236m2" && queryMatchesEngine(query, selected) && valveTimingTopic(query);
 }
 
+const valveCoverTarget = /клапан.{0,80}крыш|крыш.{0,80}клапан/iu;
+const valveCoverFastener = /болт|крепеж|креплен|шпил/iu;
+const torqueUnit = /н\s*[·⋅.]?\s*м|кгс\s*[·⋅.]\s*м/iu;
+const torqueValue = /\p{N}/u;
+const frontOrRearHeadCover = /(?:(?:передн|задн)[\p{L}\s-]{0,50}(?:головк|гбц)|(?:головк|гбц)[\p{L}\s-]{0,50}(?:передн|задн))/iu;
+
+function torqueSegments(line) {
+  return line.split(/[;；|｜\t]|(?<!\d),(?!\d)|(?<=[.!?])\s+(?=[А-ЯЁA-Z])/u);
+}
+
+function focusValveCoverTorqueRow(text) {
+  // Require the fastener, its component, the action and the value in a single clause.
+  const match = /болт[\p{L}]*\s+(?:крепления\s+)?(?:крышки\s+клапанов|клапанной\s+крышки)\s+(?:затянуть|завернуть|подтянуть)\s+(?:с\s+)?моментом\s+(?:от\s+)?\d/iu.exec(text);
+  return match ? text.slice(match.index).trim() : "";
+}
+
+export function valveCoverTorqueRows(text, engineModel, scope = { applies: true }) {
+  const selected = engineModel ? engineKey(engineModel) : null;
+  const lines = text.split(/\r?\n/u);
+  const rows = [];
+  let sectionApplies = scope.applies;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index].trim();
+    if (selected && /(?:ЗМЗ|ЯМЗ|ZMZ|YaMZ)[\s-]*\d/iu.test(line)
+      && !valveCoverFastener.test(line) && (line.endsWith(":") || /^(?:только\s+)?(?:для\s+)?(?:двигател[ья]\s+)?(?:ЗМЗ|ЯМЗ|ZMZ|YaMZ)[\s-]*[\d.а-яa-z-]+[.]?$/iu.test(line))) {
+      sectionApplies = queryMatchesEngine(line, selected);
+    }
+    if (!sectionApplies) continue;
+    for (const segment of torqueSegments(lines[index])) {
+      const normalized = segment.replace(/\s+/gu, " ").trim();
+      if (valveCoverTarget.test(normalized) && valveCoverFastener.test(normalized) && torqueValue.test(normalized) && torqueUnit.test(normalized)
+        && !frontOrRearHeadCover.test(normalized) && (!selected || (queryMatchesEngine(line, selected) && queryMatchesEngine(normalized, selected)))) {
+        const focused = focusValveCoverTorqueRow(normalized);
+        if (focused) rows.push(focused);
+      }
+      else {
+        const next = (lines[index + 1] || "").trim();
+        const continuation = /^н\s*[·⋅.]?\s*м|^кгс\s*[·⋅.]\s*м/iu.test(next)
+          && torqueValue.test(next) && torqueUnit.test(next)
+          && !valveCoverFastener.test(next) && !valveCoverTarget.test(next)
+          && !/[.!?;:]\s*$/u.test(normalized);
+        const combined = `${normalized} ${next}`.replace(/\s+/gu, " ").trim();
+        if (continuation && valveCoverTarget.test(normalized) && valveCoverFastener.test(normalized)
+          && torqueValue.test(normalized) && torqueUnit.test(combined) && !frontOrRearHeadCover.test(combined)
+          && (!selected || (queryMatchesEngine(line, selected) && queryMatchesEngine(normalized, selected)))) {
+          const focused = focusValveCoverTorqueRow(combined);
+          if (focused) rows.push(focused);
+        }
+      }
+    }
+  }
+  scope.applies = sectionApplies;
+  return [...new Set(rows)];
+}
+
 function readIndex(directory) {
   try { return JSON.parse(readFileSync(path.join(directory, "index.json"), "utf8")); }
   catch (error) { if (error.code === "ENOENT") return { version: 1, manuals: [] }; throw error; }
@@ -151,7 +206,30 @@ export function createManualRepository(indexData) {
     const count = Number.isSafeInteger(limit) ? Math.max(1, Math.min(limit, 10)) : 5;
     return scored.slice(0, count).map(({ manual, page, score }) => ({ manual: { id: manual.id, title: manual.title, filename: manual.filename, engine: manual.engineKeys[0] }, pdfPage: page.pdfPage, text: snippet(page, queryTerms), score }));
   }
-  return { getManuals: () => manuals.map(({ id, title, filename, engineKeys, pageCount, sha256, revision, procedures }) => ({ id, title, filename, engineKeys, pageCount, ...(sha256 ? { sha256 } : {}), ...(revision ? { revision } : {}), ...(procedures ? { procedures } : {}) })), manualById, manualPageText, searchManuals };
+  function searchValveCoverTorquePages({ engineModel, query = "" } = {}) {
+    const selected = engineKey(engineModel);
+    if (!selected || !queryMatchesEngine(query, selected)) return [];
+    return engineManuals(engineModel).flatMap(manual => {
+      const scope = { applies: true };
+      return manual.pages
+      .flatMap(page => valveCoverTorqueRows(page.text, engineModel, scope)
+        // Shared manuals can mention multiple engine variants on one page. Apply
+        // variant gating to the matched row, not unrelated text elsewhere on it.
+        .filter(text => queryMatchesEngine(text, selected))
+        .map(text => {
+        const references = [...text.matchAll(/рис(?:унок)?\.?\s*№?\s*(\d+)/giu)].map(([, number]) => number);
+        const illustration = references.map(number => {
+          const captionPage = manual.pages.find(candidate => new RegExp(`(?:рис(?:унок)?\\.?\\s*№?\\s*${number}(?!\\d)\\s*\\.?\\s*)[^\\n]{0,180}(?:последовательност|схем).{0,80}(?:болт|крепеж|креплен).{0,80}(?:клапан.{0,40}крыш|крыш.{0,40}клапан)`, "iu").test(candidate.text));
+          if (!captionPage) return null;
+          const caption = captionPage.text.split(/\r?\n/u).map(line => line.trim()).find(line => new RegExp(`(?:рис(?:унок)?\\.?\\s*№?\\s*${number}(?!\\d)\\s*\\.?\\s*)[^\\n]{0,180}(?:последовательност|схем).{0,80}(?:болт|крепеж|креплен).{0,80}(?:клапан.{0,40}крыш|крыш.{0,40}клапан)`, "iu").test(line));
+          return caption ? { illustrationPage: captionPage.pdfPage, figureNumber: number, illustrationCaption: caption } : null;
+        }).find(Boolean);
+        return { manual: { id: manual.id, title: manual.title, engine: engineModel }, pdfPage: page.pdfPage, text,
+          ...(illustration ? illustration : {}) };
+      }));
+    });
+  }
+  return { getManuals: () => manuals.map(({ id, title, filename, engineKeys, pageCount, sha256, revision, procedures }) => ({ id, title, filename, engineKeys, pageCount, ...(sha256 ? { sha256 } : {}), ...(revision ? { revision } : {}), ...(procedures ? { procedures } : {}) })), manualById, manualPageText, searchManuals, searchValveCoverTorquePages };
 }
 
 const repository = createManualRepository(knowledgeDirectory ? readIndex(knowledgeDirectory) : null);
@@ -159,3 +237,4 @@ export const searchManuals = repository.searchManuals;
 export const getManuals = repository.getManuals;
 export const manualById = repository.manualById;
 export const manualPageText = repository.manualPageText;
+export const searchValveCoverTorquePages = repository.searchValveCoverTorquePages;

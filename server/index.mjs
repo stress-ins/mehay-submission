@@ -8,9 +8,9 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { searchManuals, manualById, getManuals, manualDirectory, isValveTimingQuestion } from "./manuals.mjs";
+import { searchManuals, searchValveCoverTorquePages, manualById, getManuals, manualDirectory, isValveTimingQuestion } from "./manuals.mjs";
 import { fleet as diagnosticFleet, repairExperience, seedRepairHistory } from "./repair-experience.mjs";
-import { answerFromManuals, isRoadworthinessQuestion, isYamzMainBearingTorqueQuestion, manualLanguages, roadworthinessAnswer, translateManualText, yamzMainBearingTorqueAssessment } from "./manual-answer.mjs";
+import { answerFromManuals, isRoadworthinessQuestion, isValveCoverFastenerTorqueQuestion, isYamzMainBearingTorqueQuestion, manualLanguages, missingTorqueContextAnswer, roadworthinessAnswer, translateManualText, valveCoverFastenerTorqueAssessment, yamzMainBearingTorqueAssessment } from "./manual-answer.mjs";
 import { mountNeuroDvs, publicDiagnosis, vehicleMeasurementPriority } from "./neurodvs.mjs";
 import { createManualPageRenderer, ManualPageError } from "./manual-page-renderer.mjs";
 import { buildAssistantEvidence, classifySearchOrigin, findRecordMarkers, hasTorqueRecommendation, isTorqueQuery, resolveAssistantCitations, sanitizePriorEvidenceMarkers, scopedWebSearchQuery, searchCitationMatchesScope } from "./assistant-evidence.mjs";
@@ -715,6 +715,7 @@ export function createApp({
   passwordDeriver = derivePassword,
   authNow = () => Date.now(),
   manualSearch = searchManuals,
+  valveCoverTorqueSearch = searchValveCoverTorquePages,
   legacyDemo = false,
   acousticDemo = process.env.MEHAY_ACOUSTIC_DEMO === "1",
   acousticIndexPath = process.env.MEHAY_ACOUSTIC_INDEX,
@@ -1333,15 +1334,22 @@ export function createApp({
       ? (translate ? await translateManualText(prior, "ru") : prior)
       : "";
     const retrievalQuery = [searchQuery, previousQuestion, followUp && fault].filter(Boolean).join(" ");
-    const pages = await manualSearch({ engineModel, query: retrievalQuery, limit: 5 });
-    const assessment = answerMode || isValveTimingQuestion(engineModel, retrievalQuery)
+    const valveCoverTorqueQuestion = isValveCoverFastenerTorqueQuestion(retrievalQuery);
+    const pages = valveCoverTorqueQuestion
+      ? await valveCoverTorqueSearch({ engineModel, query: retrievalQuery })
+      : await manualSearch({ engineModel, query: retrievalQuery, limit: 5 });
+    const assessment = valveCoverTorqueQuestion
+      ? (answerMode ? valveCoverFastenerTorqueAssessment(pages, language) : { results: pages })
+      : answerMode || isValveTimingQuestion(engineModel, retrievalQuery)
       ? await answerFromManuals({ pages, engineModel, fault, query: searchQuery, previousQuestion, retrievalQuery, language })
       : { results: pages };
     const { results, answerUnavailable, manualAssessment } = assessment;
     const translation = translate && !manualAssessment && results.length ? await translateManualText(results[0].text, language) : null;
     const answer = assessment.answer || (translation ? `PDF · ${results[0].pdfPage}\n${translation}` : null);
     const citations = results.map((chunk) => ({
-      manual: { id: chunk.manual.id, title: chunk.manual.title }, pdfPage: chunk.pdfPage, text: chunk.text, score: chunk.score,
+      manual: { id: chunk.manual.id, title: chunk.manual.title }, manualId: chunk.manual.id,
+      pdfPage: chunk.pdfPage, text: chunk.text, score: chunk.score,
+      ...(chunk.illustrationPage ? { illustrationPage: chunk.illustrationPage, figureNumber: chunk.figureNumber, illustrationCaption: chunk.illustrationCaption } : {}),
       url: `/api/manuals/${encodeURIComponent(chunk.manual.id)}.pdf#page=${chunk.pdfPage}`,
     }));
     const exchangeId = answerMode && req.body.saveConversation === true
@@ -2132,6 +2140,12 @@ export function createApp({
     if (!v && requestDraft !== null) return fail(res, 400, "invalid_request_draft");
     if (!v) {
       if (isRoadworthinessQuestion(b.message)) return res.json({ answer: roadworthinessAnswer(b.language), sources: [], model: process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini", evidence: { records: [], citedRecordIds: [], unresolvedCitations: [], technicalCards: [], checkedAt: new Date().toISOString(), truncated: false } });
+      if (isValveCoverFastenerTorqueQuestion(b.message) || isTorqueQuery(b.message)) {
+        const assessment = isValveCoverFastenerTorqueQuestion(b.message)
+          ? valveCoverFastenerTorqueAssessment([], b.language || "ru")
+          : { answer: missingTorqueContextAnswer(b.language || "ru"), results: [], manualAssessment: "insufficient_evidence" };
+        return res.json({ ...assessment, sources: [], model: process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini", evidence: { records: [], citedRecordIds: [], unresolvedCitations: [], technicalCards: [], checkedAt: new Date().toISOString(), truncated: false } });
+      }
       const key = process.env.OPENROUTER_API_KEY;
       if (!key) return fail(res, 503, "assistant_unavailable");
       const model = process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini";
@@ -2178,14 +2192,26 @@ export function createApp({
       return res.json({ answer: `Метка ${ambiguousMarkers.map((id) => `[${id}]`).join(", ")} могла относиться к другому реестру прошлого ответа. Уточните название работы, заявки или диагностики, чтобы я открыл нужную запись.`, sources: [], model: process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini", evidence });
     }
     if (isRoadworthinessQuestion(b.message)) return res.json({ answer: roadworthinessAnswer(b.language), sources: [], model: process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini", evidence });
-    const engineModel = normalizeEngineVariant(b.engineModel) || "";
+    const engineModel = normalizeEngineVariant(b.engineModel) || normalizeEngineVariant(v.engine) || "";
     const vehicleEngineVariant = normalizeEngineVariant(v.engine);
     const manualEngineMatchesVehicle = Boolean(engineModel && vehicleEngineVariant === engineModel);
     const normalizedEngine = engineModel.toLocaleLowerCase("ru").replaceAll("ё", "е").replace(/[^a-zа-я0-9]/g, "");
     const supportedEngines = new Set(["ямз236м2", "ямз536", "змз523410", "змз4090410", "змз4090510"]);
-    const manualChunks = supportedEngines.has(normalizedEngine) ? await manualSearch({ engineModel, query: b.message, limit: 5 }) : [];
+    const valveCoverTorqueQuestion = isValveCoverFastenerTorqueQuestion(b.message);
+    const manualChunks = supportedEngines.has(normalizedEngine) && !valveCoverTorqueQuestion ? await manualSearch({ engineModel, query: b.message, limit: 5 }) : [];
     const key = process.env.OPENROUTER_API_KEY,
       model = process.env.OPENROUTER_MODEL || "openai/gpt-5.4-mini";
+    if (valveCoverTorqueQuestion) {
+      const assessment = manualEngineMatchesVehicle
+        ? valveCoverFastenerTorqueAssessment(await valveCoverTorqueSearch({ engineModel, query: b.message }), b.language || "ru")
+        : valveCoverFastenerTorqueAssessment([], b.language || "ru");
+      if (assessment.manualAssessment === "sourced") evidence.technicalCards = evidence.technicalCards.filter(card => card.id !== "torque");
+      return res.json({ ...assessment, model, evidence,
+        sources: assessment.results.map((chunk, i) => ({ id: `manual-${i + 1}`, title: chunk.manual.title, type: "manual", manual: chunk.manual.title,
+          manualId: chunk.manual.id, pdfPage: chunk.pdfPage,
+          ...(chunk.illustrationPage ? { illustrationPage: chunk.illustrationPage, figureNumber: chunk.figureNumber, illustrationCaption: chunk.illustrationCaption } : {}),
+          url: `/api/manuals/${encodeURIComponent(chunk.manual.id)}.pdf#page=${chunk.pdfPage}`, description: chunk.text.slice(0, 1000), tags: [] })) });
+    }
     if (manualEngineMatchesVehicle && isYamzMainBearingTorqueQuestion(engineModel, b.message)) {
       const assessment = yamzMainBearingTorqueAssessment(manualChunks, b.language || "ru");
       if (assessment) return res.json({ answer: assessment.answer, manualAssessment: assessment.manualAssessment, model, evidence,

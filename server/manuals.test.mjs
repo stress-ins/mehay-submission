@@ -45,6 +45,22 @@ test("torque evidence search scans the selected engine's allowed pages and links
   assert.deepEqual(repo.searchValveCoverTorquePages({ engineModel: "ЗМЗ-40904.10", query: "ЗМЗ-40905.10 момент болты крышки клапанов" }), []);
 });
 
+test("valve torque applicability carries across PDF pages and stays attached to its table row", () => {
+  const repo = createManualRepository({ manuals: [{
+    id: "zmz-40904-40905", title: "Shared service guide", filename: "shared.pdf",
+    engineKeys: ["ЗМЗ-40904.10", "ЗМЗ-40905.10"], pages: [
+      { pdfPage: 1, text: "Только для ЗМЗ-40904.10:" },
+      { pdfPage: 2, text: "Болты крышки клапанов затянуть моментом 22 Н·м." },
+      { pdfPage: 3, text: "ЗМЗ-40904.10 | Болты крышки клапанов затянуть моментом 22 Н·м." },
+      { pdfPage: 4, text: "Только для ЗМЗ-40905.10:" },
+      { pdfPage: 5, text: "Болты крышки клапанов затянуть моментом 24 Н·м." },
+      { pdfPage: 6, text: "Болты крышки клапанов затянуть моментом 25 Н·м." },
+    ],
+  }] });
+  const found = repo.searchValveCoverTorquePages({ engineModel: "ЗМЗ-40905.10", query: "ЗМЗ-40905.10 момент затяжки болтов крышки клапанов" });
+  assert.deepEqual(found.map(({ pdfPage, text }) => [pdfPage, text]), [[5, "Болты крышки клапанов затянуть моментом 24 Н·м."], [6, "Болты крышки клапанов затянуть моментом 25 Н·м."]]);
+});
+
 test("index exposes allowlisted manual metadata without depending on bundled PDF content", () => {
   assert.deepEqual(repository.getManuals(), [{
     id: "zmz-40904-40905", title: "Synthetic service guide", filename: "sample.pdf",

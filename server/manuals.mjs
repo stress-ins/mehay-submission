@@ -40,11 +40,11 @@ function focusValveCoverTorqueRow(text) {
   return match ? text.slice(match.index).trim() : "";
 }
 
-export function valveCoverTorqueRows(text, engineModel) {
+export function valveCoverTorqueRows(text, engineModel, scope = { applies: true }) {
   const selected = engineModel ? engineKey(engineModel) : null;
   const lines = text.split(/\r?\n/u);
   const rows = [];
-  let sectionApplies = true;
+  let sectionApplies = scope.applies;
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index].trim();
     if (selected && /(?:ЗМЗ|ЯМЗ|ZMZ|YaMZ)[\s-]*\d/iu.test(line)
@@ -55,7 +55,7 @@ export function valveCoverTorqueRows(text, engineModel) {
     for (const segment of torqueSegments(lines[index])) {
       const normalized = segment.replace(/\s+/gu, " ").trim();
       if (valveCoverTarget.test(normalized) && valveCoverFastener.test(normalized) && torqueValue.test(normalized) && torqueUnit.test(normalized)
-        && !frontOrRearHeadCover.test(normalized) && (!selected || queryMatchesEngine(normalized, selected))) {
+        && !frontOrRearHeadCover.test(normalized) && (!selected || (queryMatchesEngine(line, selected) && queryMatchesEngine(normalized, selected)))) {
         const focused = focusValveCoverTorqueRow(normalized);
         if (focused) rows.push(focused);
       }
@@ -68,13 +68,14 @@ export function valveCoverTorqueRows(text, engineModel) {
         const combined = `${normalized} ${next}`.replace(/\s+/gu, " ").trim();
         if (continuation && valveCoverTarget.test(normalized) && valveCoverFastener.test(normalized)
           && torqueValue.test(normalized) && torqueUnit.test(combined) && !frontOrRearHeadCover.test(combined)
-          && (!selected || queryMatchesEngine(normalized, selected))) {
+          && (!selected || (queryMatchesEngine(line, selected) && queryMatchesEngine(normalized, selected)))) {
           const focused = focusValveCoverTorqueRow(combined);
           if (focused) rows.push(focused);
         }
       }
     }
   }
+  scope.applies = sectionApplies;
   return [...new Set(rows)];
 }
 
@@ -208,8 +209,10 @@ export function createManualRepository(indexData) {
   function searchValveCoverTorquePages({ engineModel, query = "" } = {}) {
     const selected = engineKey(engineModel);
     if (!selected || !queryMatchesEngine(query, selected)) return [];
-    return engineManuals(engineModel).flatMap(manual => manual.pages
-      .flatMap(page => valveCoverTorqueRows(page.text, engineModel)
+    return engineManuals(engineModel).flatMap(manual => {
+      const scope = { applies: true };
+      return manual.pages
+      .flatMap(page => valveCoverTorqueRows(page.text, engineModel, scope)
         // Shared manuals can mention multiple engine variants on one page. Apply
         // variant gating to the matched row, not unrelated text elsewhere on it.
         .filter(text => queryMatchesEngine(text, selected))
@@ -223,7 +226,8 @@ export function createManualRepository(indexData) {
         }).find(Boolean);
         return { manual: { id: manual.id, title: manual.title, engine: engineModel }, pdfPage: page.pdfPage, text,
           ...(illustration ? illustration : {}) };
-      })));
+      }));
+    });
   }
   return { getManuals: () => manuals.map(({ id, title, filename, engineKeys, pageCount, sha256, revision, procedures }) => ({ id, title, filename, engineKeys, pageCount, ...(sha256 ? { sha256 } : {}), ...(revision ? { revision } : {}), ...(procedures ? { procedures } : {}) })), manualById, manualPageText, searchManuals, searchValveCoverTorquePages };
 }
